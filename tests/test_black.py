@@ -1630,6 +1630,10 @@ class BlackTestCase(unittest.TestCase):
                 raise result.exception
             self.assertEqual(result.exit_code, 0)
 
+    def test_cython_parse_cimport(self) -> None:
+        src_text, _ = read_data("cython_parse_tests/cimport.pyx")
+        black.lib2to3_parse(src_text, {TargetVersion.CYTHON})
+
 
 if __name__ == "__main__":
     unittest.main(module="test_black")
