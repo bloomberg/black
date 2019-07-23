@@ -121,6 +121,7 @@ class TargetVersion(Enum):
     PY36 = 6
     PY37 = 7
     PY38 = 8
+    CYTHON = 9
 
     def is_python2(self) -> bool:
         return self is TargetVersion.PY27
@@ -174,6 +175,14 @@ VERSION_TO_FEATURES: Dict[TargetVersion, Set[Feature]] = {
         Feature.TRAILING_COMMA_IN_CALL,
         Feature.TRAILING_COMMA_IN_DEF,
         Feature.ASYNC_KEYWORDS,
+    },
+    TargetVersion.CYTHON: {
+        Feature.UNICODE_LITERALS,
+        Feature.F_STRINGS,
+        Feature.NUMERIC_UNDERSCORES,
+        Feature.TRAILING_COMMA_IN_CALL,
+        Feature.TRAILING_COMMA_IN_DEF,
+        Feature.ASYNC_IDENTIFIERS,
     },
 }
 
@@ -611,6 +620,12 @@ def format_file_in_place(
     """
     if src.suffix == ".pyi":
         mode = evolve(mode, is_pyi=True)
+    elif src.suffix in {".pxd", ".pyx"}:
+        mode = evolve(mode, target_versions={TargetVersion.CYTHON})
+
+    # Turn off AST validation for Cython
+    if TargetVersion.CYTHON in mode.target_versions:
+        fast = True
 
     then = datetime.utcfromtimestamp(src.stat().st_mtime)
     with open(src, "rb") as buf:
@@ -779,6 +794,8 @@ def get_grammars(target_versions: Set[TargetVersion]) -> List[Grammar]:
             # Python 2.7
             pygram.python_grammar,
         ]
+    elif TargetVersion.CYTHON in target_versions:
+        return [pygram.cython_grammar]
     else:
         # Python 3-compatible code, so only try Python 3 grammar.
         grammars = []

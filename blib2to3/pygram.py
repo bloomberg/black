@@ -12,6 +12,7 @@ from .pgen2 import driver
 
 # The grammar file
 _GRAMMAR_FILE = os.path.join(os.path.dirname(__file__), "Grammar.txt")
+_CYTHON_GRAMMAR_FILE = os.path.join(os.path.dirname(__file__), "CythonGrammar.txt")
 _PATTERN_GRAMMAR_FILE = os.path.join(os.path.dirname(__file__),
                                      "PatternGrammar.txt")
 
@@ -34,6 +35,7 @@ def initialize(cache_dir=None):
     global python_grammar_no_print_statement_no_exec_statement
     global python_grammar_no_print_statement_no_exec_statement_async_keywords
     global python_symbols
+    global cython_grammar
     global pattern_grammar
     global pattern_symbols
 
@@ -57,6 +59,13 @@ def initialize(cache_dir=None):
         python_grammar_no_print_statement_no_exec_statement.copy()
     )
     python_grammar_no_print_statement_no_exec_statement_async_keywords.async_keywords = True
+
+    # Cython
+    cython_grammar = driver.load_packaged_grammar(
+        "blib2to3", _CYTHON_GRAMMAR_FILE, cache_dir
+    )
+    del cython_grammar.keywords["print"]
+    del cython_grammar.keywords["exec"]
 
     pattern_grammar = driver.load_packaged_grammar("blib2to3", _PATTERN_GRAMMAR_FILE,
                                                    cache_dir)
