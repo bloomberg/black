@@ -56,7 +56,7 @@ def dump_to_stderr(*output: str) -> str:
 
 def read_data(name: str, data: bool = True) -> Tuple[str, str]:
     """read_data('test_name') -> 'input', 'output'"""
-    if not name.endswith((".py", ".pyi", ".out", ".diff")):
+    if not name.endswith((".py", ".pyi", ".pyx", ".pxd", ".out", ".diff")):
         name += ".py"
     _input: List[str] = []
     _output: List[str] = []
@@ -1629,6 +1629,10 @@ class BlackTestCase(unittest.TestCase):
             if result.exception is not None:
                 raise result.exception
             self.assertEqual(result.exit_code, 0)
+
+    def test_cython_parse_cimport(self) -> None:
+        src_text, _ = read_data("cython_parse_tests/cimport.pyx")
+        black.lib2to3_parse(src_text, {TargetVersion.CYTHON})
 
 
 if __name__ == "__main__":
