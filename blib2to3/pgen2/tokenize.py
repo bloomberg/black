@@ -58,11 +58,12 @@ Comment = r'#[^\r\n]*'
 Ignore = Whitespace + any(r'\\\r?\n' + Whitespace) + maybe(Comment)
 Name = r'\w+'  # this is invalid but it's fine because Name comes after Number in all groups
 
+Intsuffix = r'[lLuU]*'
 Binnumber = r'0[bB]_?[01]+(?:_[01]+)*'
-Hexnumber = r'0[xX]_?[\da-fA-F]+(?:_[\da-fA-F]+)*[lL]?'
-Octnumber = r'0[oO]?_?[0-7]+(?:_[0-7]+)*[lL]?'
-Decnumber = group(r'[1-9]\d*(?:_\d+)*[lL]?', '0[lL]?')
-Intnumber = group(Binnumber, Hexnumber, Octnumber, Decnumber)
+Hexnumber = r'0[xX]_?[\da-fA-F]+(?:_[\da-fA-F]+)*'
+Octnumber = r'0[oO]?_?[0-7]+(?:_[0-7]+)*'
+Decnumber = group(r'[1-9]\d*(?:_\d+)*', '0')
+Intnumber = group(Binnumber, Hexnumber, Octnumber, Decnumber) + Intsuffix
 Exponent = r'[eE][-+]?\d+(?:_\d+)*'
 Pointfloat = group(r'\d+(?:_\d+)*\.(?:\d+(?:_\d+)*)?', r'\.\d+(?:_\d+)*') + maybe(Exponent)
 Expfloat = r'\d+(?:_\d+)*' + Exponent
