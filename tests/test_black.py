@@ -56,7 +56,7 @@ def dump_to_stderr(*output: str) -> str:
 
 def read_data(name: str, data: bool = True) -> Tuple[str, str]:
     """read_data('test_name') -> 'input', 'output'"""
-    if not name.endswith((".py", ".pyi", ".out", ".diff")):
+    if not name.endswith((".py", ".pyi", ".pyx", ".pxd", ".out", ".diff")):
         name += ".py"
     _input: List[str] = []
     _output: List[str] = []
