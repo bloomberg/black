@@ -67,7 +67,7 @@ assert_stmt: 'assert' test [',' test]
 DEF_stmt: 'DEF' NAME '=' testlist
 include_stmt: 'include' STRING
 
-compound_stmt: if_stmt | while_stmt | for_stmt | try_stmt | with_stmt | funcdef | classdef | decorated | async_stmt | cdef_stmt
+compound_stmt: if_stmt | while_stmt | for_stmt | try_stmt | with_stmt | funcdef | classdef | decorated | async_stmt | cdef_stmt | IF_stmt
 async_stmt: ASYNC (funcdef | with_stmt | for_stmt)
 if_stmt: 'if' test ':' suite ('elif' test ':' suite)* ['else' ':' suite]
 while_stmt: 'while' test ':' suite ['else' ':' suite]
@@ -78,6 +78,7 @@ try_stmt: ('try' ':' suite
 	    ['finally' ':' suite] |
 	   'finally' ':' suite))
 with_stmt: 'with' with_item (',' with_item)*  ':' suite
+IF_stmt: 'IF' testlist ':' suite ('ELIF' testlist ':' suite)* ['ELSE' ':' suite]
 cdef_stmt: ('cdef'|'cpdef') ['public' ['api'] | 'extern' | 'readonly' | 'api'] inline_cdef_stmt
 with_item: test ['as' expr]
 with_var: 'as' expr
