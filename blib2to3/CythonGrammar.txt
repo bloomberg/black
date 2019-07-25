@@ -67,7 +67,7 @@ assert_stmt: 'assert' test [',' test]
 DEF_stmt: 'DEF' NAME '=' testlist
 include_stmt: 'include' STRING
 
-compound_stmt: if_stmt | while_stmt | for_stmt | try_stmt | with_stmt | funcdef | classdef | decorated | async_stmt
+compound_stmt: if_stmt | while_stmt | for_stmt | try_stmt | with_stmt | funcdef | classdef | decorated | async_stmt | cdef_stmt
 async_stmt: ASYNC (funcdef | with_stmt | for_stmt)
 if_stmt: 'if' test ':' suite ('elif' test ':' suite)* ['else' ':' suite]
 while_stmt: 'while' test ':' suite ['else' ':' suite]
@@ -78,11 +78,18 @@ try_stmt: ('try' ':' suite
 	    ['finally' ':' suite] |
 	   'finally' ':' suite))
 with_stmt: 'with' with_item (',' with_item)*  ':' suite
+cdef_stmt: ('cdef'|'cpdef') ['public' ['api'] | 'extern' | 'readonly' | 'api'] inline_cdef_stmt
 with_item: test ['as' expr]
 with_var: 'as' expr
 # NB compile.c makes sure that the default except clause is last
 except_clause: 'except' [test [(',' | 'as') test]]
 suite: simple_stmt | NEWLINE INDENT stmt+ DEDENT
+
+inline_cdef_stmt: enumdef
+enumdef: 'enum' [NAME [STRING]] ':' enum_suite
+enum_suite: enum_line | NEWLINE INDENT enum_line+ DEDENT
+enum_line: (pass_stmt | enum_item (',' enum_item)* [',']) NEWLINE
+enum_item: NAME [STRING] ['=' test]
 
 # Backward compatibility cruft to support:
 # [ x for x in lambda: True, lambda: False if x() ]
