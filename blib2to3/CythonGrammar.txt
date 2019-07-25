@@ -32,7 +32,7 @@ vfpdef: vname | '(' vfplist ')'
 vfplist: vfpdef (',' vfpdef)* [',']
 
 stmt: simple_stmt | compound_stmt
-simple_stmt: (DEF_stmt | small_stmt (';' small_stmt)* [';']) NEWLINE
+simple_stmt: (DEF_stmt | include_stmt | small_stmt (';' small_stmt)* [';']) NEWLINE
 small_stmt: (expr_stmt | print_stmt  | del_stmt | pass_stmt | flow_stmt |
              import_stmt | global_stmt | exec_stmt | assert_stmt)
 expr_stmt: testlist_star_expr (annassign | augassign (yield_expr|testlist) |
@@ -65,6 +65,7 @@ global_stmt: ('global' | 'nonlocal') NAME (',' NAME)*
 exec_stmt: 'exec' expr ['in' test [',' test]]
 assert_stmt: 'assert' test [',' test]
 DEF_stmt: 'DEF' NAME '=' testlist
+include_stmt: 'include' STRING
 
 compound_stmt: if_stmt | while_stmt | for_stmt | try_stmt | with_stmt | funcdef | classdef | decorated | async_stmt
 async_stmt: ASYNC (funcdef | with_stmt | for_stmt)
