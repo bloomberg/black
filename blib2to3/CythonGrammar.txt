@@ -86,7 +86,8 @@ with_var: 'as' expr
 except_clause: 'except' [test [(',' | 'as') test]]
 suite: simple_stmt | NEWLINE INDENT stmt+ DEDENT
 
-cdef_suite: inline_cdef_stmt | NEWLINE INDENT inline_cdef_stmt+ DEDENT
+cdef_suite: cdef_suite_item | NEWLINE INDENT cdef_suite_item+ DEDENT
+cdef_suite_item: DEF_stmt NEWLINE | IF_stmt | ['cdef'|'cpdef'] inline_cdef_stmt
 inline_cdef_stmt: pass_stmt NEWLINE | enumdef | cdef_extern_block | cclassdef
 enumdef: 'enum' [NAME [STRING]] ':' enum_suite
 enum_suite: enum_line | NEWLINE INDENT enum_line+ DEDENT
