@@ -79,7 +79,7 @@ try_stmt: ('try' ':' suite
 	   'finally' ':' suite))
 with_stmt: 'with' with_item (',' with_item)*  ':' suite
 IF_stmt: 'IF' testlist ':' suite ('ELIF' testlist ':' suite)* ['ELSE' ':' suite]
-cdef_stmt: ('cdef'|'cpdef') ['public' ['api'] | 'extern' | 'readonly' | 'api'] inline_cdef_stmt
+cdef_stmt: ('cdef'|'cpdef') ['public' | 'extern' | 'readonly'] ['api'] inline_cdef_stmt
 with_item: test ['as' expr]
 with_var: 'as' expr
 # NB compile.c makes sure that the default except clause is last
