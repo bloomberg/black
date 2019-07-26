@@ -86,7 +86,7 @@ with_var: 'as' expr
 except_clause: 'except' [test [(',' | 'as') test]]
 suite: simple_stmt | NEWLINE INDENT stmt+ DEDENT
 
-inline_cdef_stmt: enumdef
+inline_cdef_stmt: pass_stmt NEWLINE | enumdef
 enumdef: 'enum' [NAME [STRING]] ':' enum_suite
 enum_suite: enum_line | NEWLINE INDENT enum_line+ DEDENT
 enum_line: (pass_stmt | enum_item (',' enum_item)* [',']) NEWLINE
