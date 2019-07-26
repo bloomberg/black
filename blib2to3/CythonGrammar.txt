@@ -86,11 +86,13 @@ with_var: 'as' expr
 except_clause: 'except' [test [(',' | 'as') test]]
 suite: simple_stmt | NEWLINE INDENT stmt+ DEDENT
 
-inline_cdef_stmt: pass_stmt NEWLINE | enumdef
+cdef_suite: inline_cdef_stmt | NEWLINE INDENT inline_cdef_stmt+ DEDENT
+inline_cdef_stmt: pass_stmt NEWLINE | enumdef | cdef_extern_block
 enumdef: 'enum' [NAME [STRING]] ':' enum_suite
 enum_suite: enum_line | NEWLINE INDENT enum_line+ DEDENT
 enum_line: (pass_stmt | enum_item (',' enum_item)* [',']) NEWLINE
 enum_item: NAME [STRING] ['=' test]
+cdef_extern_block: ['import'] 'from' ('*' | STRING) ['namespace' STRING] ['nogil'] ':' cdef_suite
 
 # Backward compatibility cruft to support:
 # [ x for x in lambda: True, lambda: False if x() ]

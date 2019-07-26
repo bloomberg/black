@@ -1654,6 +1654,10 @@ class BlackTestCase(unittest.TestCase):
         src_text, _ = read_data("cython_parse_tests/IF_stmt.pyx")
         black.lib2to3_parse(src_text, {TargetVersion.CYTHON})
 
+    def test_cython_parse_cdef_extern_block(self) -> None:
+        src_text, _ = read_data("cython_parse_tests/cdef_extern_block.pyx")
+        black.lib2to3_parse(src_text, {TargetVersion.CYTHON})
+
 
 if __name__ == "__main__":
     unittest.main(module="test_black")
