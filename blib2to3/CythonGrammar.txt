@@ -67,7 +67,7 @@ assert_stmt: 'assert' test [',' test]
 DEF_stmt: 'DEF' NAME '=' testlist
 include_stmt: 'include' STRING
 
-compound_stmt: if_stmt | while_stmt | for_stmt | try_stmt | with_stmt | funcdef | classdef | decorated | async_stmt | cdef_stmt | IF_stmt
+compound_stmt: if_stmt | while_stmt | for_stmt | try_stmt | with_stmt | funcdef | classdef | decorated | async_stmt | ctypedef | cdef_stmt | IF_stmt
 async_stmt: ASYNC (funcdef | with_stmt | for_stmt)
 if_stmt: 'if' test ':' suite ('elif' test ':' suite)* ['else' ':' suite]
 while_stmt: 'while' test ':' suite ['else' ':' suite]
@@ -80,6 +80,7 @@ try_stmt: ('try' ':' suite
 with_stmt: 'with' with_item (',' with_item)*  ':' suite
 IF_stmt: 'IF' testlist ':' suite ('ELIF' testlist ':' suite)* ['ELSE' ':' suite]
 cdef_stmt: ('cdef'|'cpdef') ['public' | 'extern' | 'readonly'] ['api'] inline_cdef_stmt
+ctypedef: 'ctypedef' ['public' | 'extern' | 'readonly'] ['api'] (cclassdef | enumdef)
 with_item: test ['as' expr]
 with_var: 'as' expr
 # NB compile.c makes sure that the default except clause is last
@@ -87,7 +88,7 @@ except_clause: 'except' [test [(',' | 'as') test]]
 suite: simple_stmt | NEWLINE INDENT stmt+ DEDENT
 
 cdef_suite: cdef_suite_item | NEWLINE INDENT cdef_suite_item+ DEDENT
-cdef_suite_item: DEF_stmt NEWLINE | IF_stmt | ['cdef'|'cpdef'] inline_cdef_stmt
+cdef_suite_item: ctypedef | DEF_stmt NEWLINE | IF_stmt | ['cdef'|'cpdef'] inline_cdef_stmt
 inline_cdef_stmt: pass_stmt NEWLINE | enumdef | cdef_block | cdef_extern_block | cclassdef
 enumdef: 'enum' [NAME [STRING]] ':' enum_suite
 enum_suite: enum_line | NEWLINE INDENT enum_line+ DEDENT
