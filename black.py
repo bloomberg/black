@@ -43,7 +43,7 @@ import toml
 from typed_ast import ast3, ast27
 
 # lib2to3 fork
-from blib2to3.pytree import Node, Leaf, type_repr
+from blib2to3.pytree import Node, Leaf, type_repr, cython_type_repr
 from blib2to3 import pygram, pytree
 from blib2to3.pgen2 import driver, token
 from blib2to3.pgen2.grammar import Grammar
@@ -730,6 +730,7 @@ def format_str(src_contents: str, *, mode: FileMode) -> FileContent:
         versions = detect_target_versions(src_node)
     normalize_fmt_off(src_node)
     lines = LineGenerator(
+        type_repr=get_type_repr(mode.target_versions),
         remove_u_prefix="unicode_literals" in future_imports
         or supports_feature(versions, Feature.UNICODE_LITERALS),
         is_pyi=mode.is_pyi,
@@ -771,6 +772,13 @@ def decode_bytes(src: bytes) -> Tuple[FileContent, Encoding, NewLine]:
     srcbuf.seek(0)
     with io.TextIOWrapper(srcbuf, encoding) as tiow:
         return tiow.read(), encoding, newline
+
+
+def get_type_repr(target_versions: Set[TargetVersion]) -> Callable[[int], str]:
+    if TargetVersion.CYTHON in target_versions:
+        return cython_type_repr
+    else:
+        return type_repr
 
 
 def get_grammars(target_versions: Set[TargetVersion]) -> List[Grammar]:
@@ -849,8 +857,11 @@ def lib2to3_unparse(node: Node) -> str:
 T = TypeVar("T")
 
 
+@dataclass
 class Visitor(Generic[T]):
     """Basic lib2to3 visitor that yields things of type `T` on `visit()`."""
+
+    type_repr: Callable[[int], str] = type_repr
 
     def visit(self, node: LN) -> Iterator[T]:
         """Main method to visit `node` and its children.
@@ -865,7 +876,7 @@ class Visitor(Generic[T]):
         if node.type < 256:
             name = token.tok_name[node.type]
         else:
-            name = type_repr(node.type)
+            name = self.type_repr(node.type)
         yield from getattr(self, f"visit_{name}", self.visit_default)(node)
 
     def visit_default(self, node: LN) -> Iterator[T]:
@@ -882,7 +893,7 @@ class DebugVisitor(Visitor[T]):
     def visit_default(self, node: LN) -> Iterator[T]:
         indent = " " * (2 * self.tree_depth)
         if isinstance(node, Node):
-            _type = type_repr(node.type)
+            _type = self.type_repr(node.type)
             out(f"{indent}{_type}", fg="yellow")
             self.tree_depth += 1
             for child in node.children:
