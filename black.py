@@ -1912,7 +1912,7 @@ class LineGenerator(Visitor[Line]):
         self.visit_classdef = partial(v, keywords={"class"}, parens=Ø)
         self.visit_expr_stmt = partial(v, keywords=Ø, parens=ASSIGNMENTS)
         self.visit_return_stmt = partial(v, keywords={"return"}, parens={"return"})
-        self.visit_import_from = partial(v, keywords=Ø, parens={"import"})
+        self.visit_import_from = partial(v, keywords=Ø, parens={"import", "cimport"})
         self.visit_del_stmt = partial(v, keywords=Ø, parens={"del"})
         self.visit_async_funcdef = self.visit_async_stmt
         self.visit_decorated = self.visit_decorators
@@ -2144,7 +2144,7 @@ def whitespace(leaf: Leaf, *, complex_subscript: bool) -> str:  # noqa: C901
                 return NO
 
         elif t == token.NAME:
-            if v == "import":
+            if v in {"import", "cimport"}:
                 return SPACE
 
             if prev and prev.type == token.DOT:
@@ -2809,7 +2809,7 @@ def is_import(leaf: Leaf) -> bool:
     return bool(
         t == token.NAME
         and (
-            (v == "import" and p and p.type == syms.import_name)
+            (v in {"import", "cimport"} and p and p.type == syms.import_name)
             or (v == "from" and p and p.type == syms.import_from)
         )
     )
