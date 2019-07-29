@@ -15,6 +15,7 @@ _Convert = Callable[[Grammar, _RawNode], Any]
 HUGE: int
 
 def type_repr(type_num: int) -> Text: ...
+def cython_type_repr(type_num: int) -> Text: ...
 
 class Base:
     type: int
