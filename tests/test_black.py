@@ -24,6 +24,8 @@ from typing import (
 import unittest
 from unittest.mock import patch, MagicMock
 
+from blib2to3 import pygram
+
 from click import unstyle
 from click.testing import CliRunner
 
@@ -38,6 +40,7 @@ except ImportError:
 else:
     has_blackd_deps = True
 
+pygram.initialize(black.CACHE_DIR)
 ff = partial(black.format_file_in_place, mode=black.FileMode(), fast=True)
 fs = partial(black.format_str, mode=black.FileMode())
 cyth_mode = black.FileMode(target_versions={TargetVersion.CYTHON})
@@ -1675,6 +1678,14 @@ class BlackTestCase(unittest.TestCase):
     def test_cython_parse_ctypedef_class(self) -> None:
         src_text, _ = read_data("cython_parse_tests/ctypedef_class.pyx")
         black.lib2to3_parse(src_text, {TargetVersion.CYTHON})
+
+    def test_cython_format_cimport(self) -> None:
+        black.monkey_patch_cython_symbols()
+        source, expected = read_data("cython_format_tests/cimport.pyx")
+        actual = cyth_fs(source)
+        self.assertFormatEqual(expected, actual)
+        black.assert_stable(source, actual, cyth_mode)
+        black.monkey_patch_python_symbols()
 
 
 if __name__ == "__main__":
