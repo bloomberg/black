@@ -79,14 +79,15 @@ try_stmt: ('try' ':' suite
 	   'finally' ':' suite))
 with_stmt: 'with' with_item (',' with_item)*  ':' suite
 IF_stmt: 'IF' testlist ':' suite ('ELIF' testlist ':' suite)* ['ELSE' ':' suite]
-cdef_stmt: ('cdef'|'cpdef') ['public' ['api'] | 'extern' | 'readonly' | 'api'] inline_cdef_stmt
+cdef_stmt: ('cdef'|'cpdef') ['public' | 'extern' | 'readonly'] ['api'] inline_cdef_stmt
 with_item: test ['as' expr]
 with_var: 'as' expr
 # NB compile.c makes sure that the default except clause is last
 except_clause: 'except' [test [(',' | 'as') test]]
 suite: simple_stmt | NEWLINE INDENT stmt+ DEDENT
 
-cdef_suite: inline_cdef_stmt | NEWLINE INDENT inline_cdef_stmt+ DEDENT
+cdef_suite: cdef_suite_item | NEWLINE INDENT cdef_suite_item+ DEDENT
+cdef_suite_item: DEF_stmt NEWLINE | IF_stmt | ['cdef'|'cpdef'] inline_cdef_stmt
 inline_cdef_stmt: pass_stmt NEWLINE | enumdef | cdef_extern_block | cclassdef
 enumdef: 'enum' [NAME [STRING]] ':' enum_suite
 enum_suite: enum_line | NEWLINE INDENT enum_line+ DEDENT
