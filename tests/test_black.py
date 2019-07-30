@@ -1687,6 +1687,14 @@ class BlackTestCase(unittest.TestCase):
         black.assert_stable(source, actual, cyth_mode)
         black.monkey_patch_python_symbols()
 
+    def test_cython_format_DEF_stmt(self) -> None:
+        black.monkey_patch_cython_symbols()
+        source, expected = read_data("cython_format_tests/DEF_stmt.pyx")
+        actual = cyth_fs(source)
+        self.assertFormatEqual(expected, actual)
+        black.assert_stable(source, actual, cyth_mode)
+        black.monkey_patch_python_symbols()
+
 
 if __name__ == "__main__":
     unittest.main(module="test_black")
