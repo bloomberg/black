@@ -1666,6 +1666,14 @@ class BlackTestCase(unittest.TestCase):
         src_text, _ = read_data("cython_parse_tests/cdef_block.pyx")
         black.lib2to3_parse(src_text, {TargetVersion.CYTHON})
 
+    def test_cython_parse_ctypedef_enum(self) -> None:
+        src_text, _ = read_data("cython_parse_tests/ctypedef_enum.pyx")
+        black.lib2to3_parse(src_text, {TargetVersion.CYTHON})
+
+    def test_cython_parse_ctypedef_class(self) -> None:
+        src_text, _ = read_data("cython_parse_tests/ctypedef_class.pyx")
+        black.lib2to3_parse(src_text, {TargetVersion.CYTHON})
+
 
 if __name__ == "__main__":
     unittest.main(module="test_black")
