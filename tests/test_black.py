@@ -40,6 +40,8 @@ else:
 
 ff = partial(black.format_file_in_place, mode=black.FileMode(), fast=True)
 fs = partial(black.format_str, mode=black.FileMode())
+cyth_mode = black.FileMode(target_versions={TargetVersion.CYTHON})
+cyth_fs = partial(black.format_str, mode=cyth_mode)
 THIS_FILE = Path(__file__)
 THIS_DIR = THIS_FILE.parent
 EMPTY_LINE = "# EMPTY LINE WITH WHITESPACE" + " (this comment will be removed)"
