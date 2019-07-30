@@ -31,6 +31,7 @@ from typing import (
     Sequence,
     Set,
     Tuple,
+    Type,
     TypeVar,
     Union,
     cast,
@@ -78,7 +79,9 @@ out = partial(click.secho, bold=True, err=True)
 err = partial(click.secho, fg="red", err=True)
 
 pygram.initialize(CACHE_DIR)
-syms = pygram.python_symbols
+syms = (
+    pygram.python_symbols
+)  # type: Union[Type[pygram.python_symbols], Type[pygram.cython_symbols]]
 
 
 def monkey_patch_cython_symbols() -> None:
