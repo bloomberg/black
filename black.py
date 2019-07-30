@@ -81,6 +81,110 @@ pygram.initialize(CACHE_DIR)
 syms = pygram.python_symbols
 
 
+def monkey_patch_cython_symbols() -> None:
+    global syms
+    global IMPLICIT_TUPLE
+    global STATEMENT
+    global VARARGS_PARENTS
+    global UNPACKING_PARENTS
+    global TEST_DESCENDANTS
+    syms = pygram.cython_symbols
+    IMPLICIT_TUPLE = {syms.testlist, syms.testlist_star_expr, syms.exprlist}
+    STATEMENT = {
+        syms.if_stmt,
+        syms.while_stmt,
+        syms.for_stmt,
+        syms.try_stmt,
+        syms.except_clause,
+        syms.with_stmt,
+        syms.funcdef,
+        syms.classdef,
+    }
+    VARARGS_PARENTS = {
+        syms.arglist,
+        syms.argument,  # double star in arglist
+        syms.trailer,  # single argument to call
+        syms.typedargslist,
+        syms.varargslist,  # lambdas
+    }
+    UNPACKING_PARENTS = {
+        syms.atom,  # single element of a list or set literal
+        syms.dictsetmaker,
+        syms.listmaker,
+        syms.testlist_gexp,
+        syms.testlist_star_expr,
+    }
+    TEST_DESCENDANTS = {
+        syms.test,
+        syms.lambdef,
+        syms.or_test,
+        syms.and_test,
+        syms.not_test,
+        syms.comparison,
+        syms.star_expr,
+        syms.expr,
+        syms.xor_expr,
+        syms.and_expr,
+        syms.shift_expr,
+        syms.arith_expr,
+        syms.trailer,
+        syms.term,
+        syms.power,
+    }
+
+
+def monkey_patch_python_symbols() -> None:
+    global syms
+    global IMPLICIT_TUPLE
+    global STATEMENT
+    global VARARGS_PARENTS
+    global UNPACKING_PARENTS
+    global TEST_DESCENDANTS
+    syms = pygram.python_symbols
+    IMPLICIT_TUPLE = {syms.testlist, syms.testlist_star_expr, syms.exprlist}
+    STATEMENT = {
+        syms.if_stmt,
+        syms.while_stmt,
+        syms.for_stmt,
+        syms.try_stmt,
+        syms.except_clause,
+        syms.with_stmt,
+        syms.funcdef,
+        syms.classdef,
+    }
+    VARARGS_PARENTS = {
+        syms.arglist,
+        syms.argument,  # double star in arglist
+        syms.trailer,  # single argument to call
+        syms.typedargslist,
+        syms.varargslist,  # lambdas
+    }
+    UNPACKING_PARENTS = {
+        syms.atom,  # single element of a list or set literal
+        syms.dictsetmaker,
+        syms.listmaker,
+        syms.testlist_gexp,
+        syms.testlist_star_expr,
+    }
+    TEST_DESCENDANTS = {
+        syms.test,
+        syms.lambdef,
+        syms.or_test,
+        syms.and_test,
+        syms.not_test,
+        syms.comparison,
+        syms.star_expr,
+        syms.expr,
+        syms.xor_expr,
+        syms.and_expr,
+        syms.shift_expr,
+        syms.arith_expr,
+        syms.trailer,
+        syms.term,
+        syms.power,
+    }
+
+
 class NothingChanged(UserWarning):
     """Raised when reformatted code is the same as source."""
 
@@ -452,6 +556,11 @@ def main(
             out("No paths given. Nothing to do 😴")
         ctx.exit(0)
 
+    if any(source.suffix in {".pyx", ".pxd"} for source in sources) and any(
+        source.suffix in {".py", ".pyi"} for source in sources
+    ):
+        err("Provided with both Cython and Python files 😖")
+
     if len(sources) == 1:
         reformat_one(
             src=sources.pop(),
@@ -623,9 +732,10 @@ def format_file_in_place(
     elif src.suffix in {".pxd", ".pyx"}:
         mode = evolve(mode, target_versions={TargetVersion.CYTHON})
 
-    # Turn off AST validation for Cython
+    # Turn off AST validation for Cython and monkey patch cython symbols
     if TargetVersion.CYTHON in mode.target_versions:
         fast = True
+        monkey_patch_cython_symbols()
 
     then = datetime.utcfromtimestamp(src.stat().st_mtime)
     with open(src, "rb") as buf:
