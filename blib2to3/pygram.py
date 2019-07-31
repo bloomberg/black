@@ -36,6 +36,7 @@ def initialize(cache_dir=None):
     global python_grammar_no_print_statement_no_exec_statement_async_keywords
     global python_symbols
     global cython_grammar
+    global cython_symbols
     global pattern_grammar
     global pattern_symbols
 
@@ -64,6 +65,7 @@ def initialize(cache_dir=None):
     cython_grammar = driver.load_packaged_grammar(
         "blib2to3", _CYTHON_GRAMMAR_FILE, cache_dir
     )
+    cython_symbols = Symbols(cython_grammar)
     del cython_grammar.keywords["print"]
     del cython_grammar.keywords["exec"]
 

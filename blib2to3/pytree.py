@@ -28,6 +28,17 @@ def type_repr(type_num):
             if type(val) == int: _type_reprs[val] = name
     return _type_reprs.setdefault(type_num, type_num)
 
+_cython_type_reprs = {}
+def cython_type_repr(type_num):
+    global _cython_type_reprs
+    if not _cython_type_reprs:
+        from .pygram import cython_symbols
+        # printing tokens is possible but not as useful
+        # from .pgen2 import token // token.__dict__.items():
+        for name, val in cython_symbols.__dict__.items():
+            if type(val) == int: _cython_type_reprs[val] = name
+    return _cython_type_reprs.setdefault(type_num, type_num)
+
 class Base(object):
 
     """

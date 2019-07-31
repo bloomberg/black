@@ -43,7 +43,7 @@ import toml
 from typed_ast import ast3, ast27
 
 # lib2to3 fork
-from blib2to3.pytree import Node, Leaf, type_repr
+from blib2to3.pytree import Node, Leaf, type_repr, cython_type_repr
 from blib2to3 import pygram, pytree
 from blib2to3.pgen2 import driver, token
 from blib2to3.pgen2.grammar import Grammar
@@ -79,6 +79,110 @@ err = partial(click.secho, fg="red", err=True)
 
 pygram.initialize(CACHE_DIR)
 syms = pygram.python_symbols
+
+
+def monkey_patch_cython_symbols() -> None:
+    global syms
+    global IMPLICIT_TUPLE
+    global STATEMENT
+    global VARARGS_PARENTS
+    global UNPACKING_PARENTS
+    global TEST_DESCENDANTS
+    syms = pygram.cython_symbols
+    IMPLICIT_TUPLE = {syms.testlist, syms.testlist_star_expr, syms.exprlist}
+    STATEMENT = {
+        syms.if_stmt,
+        syms.while_stmt,
+        syms.for_stmt,
+        syms.try_stmt,
+        syms.except_clause,
+        syms.with_stmt,
+        syms.funcdef,
+        syms.classdef,
+    }
+    VARARGS_PARENTS = {
+        syms.arglist,
+        syms.argument,  # double star in arglist
+        syms.trailer,  # single argument to call
+        syms.typedargslist,
+        syms.varargslist,  # lambdas
+    }
+    UNPACKING_PARENTS = {
+        syms.atom,  # single element of a list or set literal
+        syms.dictsetmaker,
+        syms.listmaker,
+        syms.testlist_gexp,
+        syms.testlist_star_expr,
+    }
+    TEST_DESCENDANTS = {
+        syms.test,
+        syms.lambdef,
+        syms.or_test,
+        syms.and_test,
+        syms.not_test,
+        syms.comparison,
+        syms.star_expr,
+        syms.expr,
+        syms.xor_expr,
+        syms.and_expr,
+        syms.shift_expr,
+        syms.arith_expr,
+        syms.trailer,
+        syms.term,
+        syms.power,
+    }
+
+
+def monkey_patch_python_symbols() -> None:
+    global syms
+    global IMPLICIT_TUPLE
+    global STATEMENT
+    global VARARGS_PARENTS
+    global UNPACKING_PARENTS
+    global TEST_DESCENDANTS
+    syms = pygram.python_symbols
+    IMPLICIT_TUPLE = {syms.testlist, syms.testlist_star_expr, syms.exprlist}
+    STATEMENT = {
+        syms.if_stmt,
+        syms.while_stmt,
+        syms.for_stmt,
+        syms.try_stmt,
+        syms.except_clause,
+        syms.with_stmt,
+        syms.funcdef,
+        syms.classdef,
+    }
+    VARARGS_PARENTS = {
+        syms.arglist,
+        syms.argument,  # double star in arglist
+        syms.trailer,  # single argument to call
+        syms.typedargslist,
+        syms.varargslist,  # lambdas
+    }
+    UNPACKING_PARENTS = {
+        syms.atom,  # single element of a list or set literal
+        syms.dictsetmaker,
+        syms.listmaker,
+        syms.testlist_gexp,
+        syms.testlist_star_expr,
+    }
+    TEST_DESCENDANTS = {
+        syms.test,
+        syms.lambdef,
+        syms.or_test,
+        syms.and_test,
+        syms.not_test,
+        syms.comparison,
+        syms.star_expr,
+        syms.expr,
+        syms.xor_expr,
+        syms.and_expr,
+        syms.shift_expr,
+        syms.arith_expr,
+        syms.trailer,
+        syms.term,
+        syms.power,
+    }
 
 
 class NothingChanged(UserWarning):
@@ -452,6 +556,11 @@ def main(
             out("No paths given. Nothing to do 😴")
         ctx.exit(0)
 
+    if any(source.suffix in {".pyx", ".pxd"} for source in sources) and any(
+        source.suffix in {".py", ".pyi"} for source in sources
+    ):
+        err("Provided with both Cython and Python files 😖")
+
     if len(sources) == 1:
         reformat_one(
             src=sources.pop(),
@@ -623,9 +732,10 @@ def format_file_in_place(
     elif src.suffix in {".pxd", ".pyx"}:
         mode = evolve(mode, target_versions={TargetVersion.CYTHON})
 
-    # Turn off AST validation for Cython
+    # Turn off AST validation for Cython and monkey patch cython symbols
     if TargetVersion.CYTHON in mode.target_versions:
         fast = True
+        monkey_patch_cython_symbols()
 
     then = datetime.utcfromtimestamp(src.stat().st_mtime)
     with open(src, "rb") as buf:
@@ -730,6 +840,7 @@ def format_str(src_contents: str, *, mode: FileMode) -> FileContent:
         versions = detect_target_versions(src_node)
     normalize_fmt_off(src_node)
     lines = LineGenerator(
+        type_repr=get_type_repr(mode.target_versions),
         remove_u_prefix="unicode_literals" in future_imports
         or supports_feature(versions, Feature.UNICODE_LITERALS),
         is_pyi=mode.is_pyi,
@@ -771,6 +882,13 @@ def decode_bytes(src: bytes) -> Tuple[FileContent, Encoding, NewLine]:
     srcbuf.seek(0)
     with io.TextIOWrapper(srcbuf, encoding) as tiow:
         return tiow.read(), encoding, newline
+
+
+def get_type_repr(target_versions: Set[TargetVersion]) -> Callable[[int], str]:
+    if TargetVersion.CYTHON in target_versions:
+        return cython_type_repr
+    else:
+        return type_repr
 
 
 def get_grammars(target_versions: Set[TargetVersion]) -> List[Grammar]:
@@ -849,8 +967,11 @@ def lib2to3_unparse(node: Node) -> str:
 T = TypeVar("T")
 
 
+@dataclass
 class Visitor(Generic[T]):
     """Basic lib2to3 visitor that yields things of type `T` on `visit()`."""
+
+    type_repr: Callable[[int], str] = type_repr
 
     def visit(self, node: LN) -> Iterator[T]:
         """Main method to visit `node` and its children.
@@ -865,7 +986,7 @@ class Visitor(Generic[T]):
         if node.type < 256:
             name = token.tok_name[node.type]
         else:
-            name = type_repr(node.type)
+            name = self.type_repr(node.type)
         yield from getattr(self, f"visit_{name}", self.visit_default)(node)
 
     def visit_default(self, node: LN) -> Iterator[T]:
@@ -882,7 +1003,7 @@ class DebugVisitor(Visitor[T]):
     def visit_default(self, node: LN) -> Iterator[T]:
         indent = " " * (2 * self.tree_depth)
         if isinstance(node, Node):
-            _type = type_repr(node.type)
+            _type = self.type_repr(node.type)
             out(f"{indent}{_type}", fg="yellow")
             self.tree_depth += 1
             for child in node.children:
