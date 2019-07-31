@@ -205,6 +205,7 @@ class cython_symbols(Symbols):
     yield_expr: int
     yield_stmt: int
     DEF_stmt: int
+    IF_stmt: int
 
 class pattern_symbols(Symbols):
     Alternative: int

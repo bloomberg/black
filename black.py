@@ -103,6 +103,7 @@ def monkey_patch_cython_symbols() -> None:
         syms.funcdef,
         syms.classdef,
         syms.DEF_stmt,
+        syms.IF_stmt,
     }
     VARARGS_PARENTS = {
         syms.arglist,
@@ -1921,6 +1922,9 @@ class LineGenerator(Visitor[Line]):
         self.visit_async_funcdef = self.visit_async_stmt
         self.visit_decorated = self.visit_decorators
         self.visit_DEF_stmt = partial(v, keywords={"DEF"}, parens={"="})
+        self.visit_IF_stmt = partial(
+            v, keywords={"IF", "ELSE", "ELIF"}, parens={"IF", "ELIF"}
+        )
 
 
 IMPLICIT_TUPLE = {syms.testlist, syms.testlist_star_expr, syms.exprlist}
