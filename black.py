@@ -31,6 +31,7 @@ from typing import (
     Sequence,
     Set,
     Tuple,
+    Type,
     TypeVar,
     Union,
     cast,
@@ -78,7 +79,9 @@ out = partial(click.secho, bold=True, err=True)
 err = partial(click.secho, fg="red", err=True)
 
 pygram.initialize(CACHE_DIR)
-syms = pygram.python_symbols
+syms = (
+    pygram.python_symbols
+)  # type: Union[Type[pygram.python_symbols], Type[pygram.cython_symbols]]
 
 
 def monkey_patch_cython_symbols() -> None:
@@ -99,6 +102,7 @@ def monkey_patch_cython_symbols() -> None:
         syms.with_stmt,
         syms.funcdef,
         syms.classdef,
+        syms.DEF_stmt,
     }
     VARARGS_PARENTS = {
         syms.arglist,
@@ -1916,6 +1920,7 @@ class LineGenerator(Visitor[Line]):
         self.visit_del_stmt = partial(v, keywords=Ø, parens={"del"})
         self.visit_async_funcdef = self.visit_async_stmt
         self.visit_decorated = self.visit_decorators
+        self.visit_DEF_stmt = partial(v, keywords={"DEF"}, parens={"="})
 
 
 IMPLICIT_TUPLE = {syms.testlist, syms.testlist_star_expr, syms.exprlist}
