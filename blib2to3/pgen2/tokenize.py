@@ -91,7 +91,7 @@ String = group(_litprefix + r"'[^\n'\\]*(?:\\.[^\n'\\]*)*'",
 Operator = group(r"\*\*=?", r">>=?", r"<<=?", r"<>", r"!=",
                  r"//=?", r"->",
                  r"[+\-*/%&@|^=<>]=?",
-                 r"~")
+                 r"~", r"\?", r"!")
 
 Bracket = '[][(){}]'
 Special = group(r'\r?\n', r'[:;.,`@]')

@@ -65,6 +65,8 @@ if sys.version_info >= (3, 5):
     ASYNC: int
 ERRORTOKEN: int
 N_TOKENS: int
+EXCLAMATIONMARK = int
+QUESTIONMARK = int
 NT_OFFSET: int
 tok_name: Dict[int, Text]
 
