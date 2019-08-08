@@ -14,7 +14,7 @@ eval_input: testlist NEWLINE* ENDMARKER
 
 decorator: '@' dotted_name [ '(' [arglist] ')' ] NEWLINE
 decorators: decorator+
-decorated: decorators (classdef | funcdef | async_funcdef)
+decorated: decorators (classdef | funcdef | async_funcdef | cdef_stmt)
 async_funcdef: ASYNC funcdef
 funcdef: 'def' NAME parameters ['->' test] ':' suite
 parameters: '(' [typedargslist] ')'
@@ -88,7 +88,7 @@ except_clause: 'except' [test [(',' | 'as') test]]
 suite: simple_stmt | NEWLINE INDENT stmt+ DEDENT
 
 cdef_suite: cdef_suite_item | NEWLINE INDENT cdef_suite_item+ DEDENT
-cdef_suite_item: ctypedef | DEF_stmt NEWLINE | IF_stmt | ['cdef'|'cpdef'] inline_cdef_stmt
+cdef_suite_item: ctypedef | DEF_stmt NEWLINE | IF_stmt | [decorators] ['cdef'|'cpdef'] inline_cdef_stmt
 inline_cdef_stmt: pass_stmt NEWLINE | enumdef | cdef_block | cdef_extern_block | cclassdef
 enumdef: 'enum' [NAME [STRING]] ':' enum_suite
 enum_suite: enum_line | NEWLINE INDENT enum_line+ DEDENT
