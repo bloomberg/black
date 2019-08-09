@@ -1683,6 +1683,19 @@ class BlackTestCase(unittest.TestCase):
         src_text, _ = read_data("cython_parse_tests/decorated_cdef.pyx")
         black.lib2to3_parse(src_text, {TargetVersion.CYTHON})
 
+    def test_cython_parse_cdef_var_func_decl(self) -> None:
+        src_text, _ = read_data("cython_parse_tests/cdef_var_func_decl.pyx")
+        black.lib2to3_parse(src_text, {TargetVersion.CYTHON})
+
+    def test_cython_parse_ctypedef_var_func_decl(self) -> None:
+        src_text, _ = read_data("cython_parse_tests/ctypedef_var_func_decl.pyx")
+        black.lib2to3_parse(src_text, {TargetVersion.CYTHON})
+
+    @unittest.skip("This should be fixed in the future!")
+    def test_cython_parse_double_paren_func_ptr(self) -> None:
+        src_text, _ = read_data("cython_parse_tests/double_paren_func_ptr.pyx")
+        black.lib2to3_parse(src_text, {TargetVersion.CYTHON})
+
     def test_cython_format_cimport(self) -> None:
         black.monkey_patch_cython_symbols()
         source, expected = read_data("cython_format_tests/cimport.pyx")
