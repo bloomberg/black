@@ -102,6 +102,11 @@ cclassdef: ('class' dotted_name ['as' NAME]
 c_class_options: c_class_option (',' c_class_option)* [',']
 c_class_option: ('object' | 'type' | 'check_size') NAME
 
+signedness: 'unsigned' | 'signed'
+longness: 'short' | 'long'
+basic_c_typenames: 'void' | 'char' | 'int' | 'float' | 'double' | 'bint'
+basic_c_type: (signedness | longness)+ [basic_c_typenames] ['complex'] | basic_c_typenames ['complex'] | 'complex'
+
 # Backward compatibility cruft to support:
 # [ x for x in lambda: True, lambda: False if x() ]
 # even while also allowing:
