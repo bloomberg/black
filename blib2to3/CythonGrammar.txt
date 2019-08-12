@@ -80,7 +80,7 @@ try_stmt: ('try' ':' suite
 with_stmt: 'with' with_item (',' with_item)*  ':' suite
 IF_stmt: 'IF' testlist ':' suite ('ELIF' testlist ':' suite)* ['ELSE' ':' suite]
 cdef_stmt: ('cdef'|'cpdef') ['public' | 'extern' | 'readonly'] ['api'] inline_cdef_stmt
-ctypedef_stmt: 'ctypedef' ['public' | 'extern' | 'readonly'] ['api'] (cclassdef | enumdef | typed_decl)
+ctypedef_stmt: 'ctypedef' ['public' | 'extern' | 'readonly'] ['api'] (cclassdef | enumdef | struct_uniondef | typed_decl)
 with_item: test ['as' expr]
 with_var: 'as' expr
 # NB compile.c makes sure that the default except clause is last
@@ -89,7 +89,7 @@ suite: simple_stmt | NEWLINE INDENT stmt+ DEDENT
 
 cdef_suite: cdef_suite_item | NEWLINE INDENT cdef_suite_item+ DEDENT
 cdef_suite_item: ctypedef_stmt | DEF_stmt NEWLINE | IF_stmt | [decorators] ['cdef'|'cpdef'] inline_cdef_stmt
-inline_cdef_stmt: pass_stmt NEWLINE | enumdef | cdef_block | cdef_extern_block | cclassdef | typed_decl
+inline_cdef_stmt: pass_stmt NEWLINE | enumdef | struct_uniondef | cdef_block | cdef_extern_block | cclassdef | typed_decl
 enumdef: 'enum' [NAME [STRING]] ':' enum_suite
 enum_suite: enum_line | NEWLINE INDENT enum_line+ DEDENT
 enum_line: (pass_stmt | enum_item (',' enum_item)* [',']) NEWLINE
@@ -101,6 +101,8 @@ cclassdef: ('class' dotted_name ['as' NAME]
             (NEWLINE | ':'  suite))
 c_class_options: c_class_option (',' c_class_option)* [',']
 c_class_option: ('object' | 'type' | 'check_size') NAME
+struct_uniondef: (['packed'] 'struct' | 'union') NAME [STRING] (NEWLINE | ':' struct_uniondef_suite)
+struct_uniondef_suite: NEWLINE INDENT (pass_stmt NEWLINE | typed_decl)+ DEDENT
 
 signedness: 'unsigned' | 'signed'
 longness: 'short' | 'long'
