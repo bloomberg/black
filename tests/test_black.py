@@ -1704,6 +1704,10 @@ class BlackTestCase(unittest.TestCase):
         src_text, _ = read_data("cython_parse_tests/fuseddef.pyx")
         black.lib2to3_parse(src_text, {TargetVersion.CYTHON})
 
+    def test_cython_parse_cppclass(self) -> None:
+        src_text, _ = read_data("cython_parse_tests/cppclass.pyx")
+        black.lib2to3_parse(src_text, {TargetVersion.CYTHON})
+
     def test_cython_format_cimport(self) -> None:
         black.monkey_patch_cython_symbols()
         source, expected = read_data("cython_format_tests/cimport.pyx")
