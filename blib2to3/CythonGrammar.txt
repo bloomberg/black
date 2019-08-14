@@ -171,8 +171,9 @@ and_expr: shift_expr ('&' shift_expr)*
 shift_expr: arith_expr (('<<'|'>>') arith_expr)*
 arith_expr: term (('+'|'-') term)*
 term: factor (('*'|'@'|'/'|'%'|'//') factor)*
-factor: ('+'|'-'|'~'|'&'|typecast) factor | power
+factor: ('+'|'-'|'~'|'&'|typecast) factor | sizeof_expr | power
 typecast: '<' type ['?'] '>'
+sizeof_expr: 'sizeof' '(' type ')'
 power: [AWAIT] atom trailer* ['**' factor]
 atom: ('(' [yield_expr|testlist_gexp] ')' |
        '[' [listmaker] ']' |
