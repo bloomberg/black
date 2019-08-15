@@ -174,7 +174,8 @@ term: factor (('*'|'@'|'/'|'%'|'//') factor)*
 factor: ('+'|'-'|'~'|'&'|typecast) factor | sizeof_expr | power
 typecast: '<' type ['?'] '>'
 sizeof_expr: 'sizeof' '(' type ')'
-power: [AWAIT] atom trailer* ['**' factor]
+power: [AWAIT] atom trailer* ['**' factor] | new_expr
+new_expr: 'new' simple_type '(' [arglist] ')'
 atom: ('(' [yield_expr|testlist_gexp] ')' |
        '[' [listmaker] ']' |
        '{' [dictsetmaker] '}' |
