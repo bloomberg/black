@@ -1,0 +1,5 @@
+new Foo()
+new Rectangle(1, 2, 3, 4)
+new Rectangle(x0, y0, x1, y1)
+new vector[MyType]()
+new vector[int*]()
