@@ -184,6 +184,8 @@ opmap_raw = """
 // DOUBLESLASH
 //= DOUBLESLASHEQUAL
 -> RARROW
+! EXCLAMATIONMARK
+? QUESTIONMARK
 """
 
 opmap = {}

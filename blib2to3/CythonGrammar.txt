@@ -80,7 +80,7 @@ try_stmt: ('try' ':' suite
 with_stmt: 'with' with_item (',' with_item)*  ':' suite
 IF_stmt: 'IF' testlist ':' suite ('ELIF' testlist ':' suite)* ['ELSE' ':' suite]
 cdef_stmt: ('cdef'|'cpdef') ['public' | 'extern' | 'readonly'] ['api'] inline_cdef_stmt
-ctypedef_stmt: 'ctypedef' ['public' | 'extern' | 'readonly'] ['api'] (cclassdef | enumdef)
+ctypedef_stmt: 'ctypedef' ['public' | 'extern' | 'readonly'] ['api'] (cclassdef | enumdef | typed_decl)
 with_item: test ['as' expr]
 with_var: 'as' expr
 # NB compile.c makes sure that the default except clause is last
@@ -89,7 +89,7 @@ suite: simple_stmt | NEWLINE INDENT stmt+ DEDENT
 
 cdef_suite: cdef_suite_item | NEWLINE INDENT cdef_suite_item+ DEDENT
 cdef_suite_item: ctypedef_stmt | DEF_stmt NEWLINE | IF_stmt | [decorators] ['cdef'|'cpdef'] inline_cdef_stmt
-inline_cdef_stmt: pass_stmt NEWLINE | enumdef | cdef_block | cdef_extern_block | cclassdef
+inline_cdef_stmt: pass_stmt NEWLINE | enumdef | cdef_block | cdef_extern_block | cclassdef | typed_decl
 enumdef: 'enum' [NAME [STRING]] ':' enum_suite
 enum_suite: enum_line | NEWLINE INDENT enum_line+ DEDENT
 enum_line: (pass_stmt | enum_item (',' enum_item)* [',']) NEWLINE
@@ -101,6 +101,40 @@ cclassdef: ('class' dotted_name ['as' NAME]
             (NEWLINE | ':'  suite))
 c_class_options: c_class_option (',' c_class_option)* [',']
 c_class_option: ('object' | 'type' | 'check_size') NAME
+
+signedness: 'unsigned' | 'signed'
+longness: 'short' | 'long'
+basic_c_typenames: 'void' | 'char' | 'int' | 'float' | 'double' | 'bint'
+basic_c_type: (signedness | longness)+ [basic_c_typenames] ['complex'] | basic_c_typenames ['complex'] | 'complex'
+
+ctuple_type: '(' type (',' type)* [','] ')'
+simple_type: ['const'] (dotted_name | basic_c_type | ctuple_type) [type_qualifiers]
+nested_type_quals: '(' (type_qualifiers [nested_type_quals] | nested_type_quals) ')'
+type: simple_type [nested_type_quals func_decl]
+
+named_nested_type_quals: '(' (type_qualifiers named_nested_type_quals | named_nested_type_quals) ')' | NAME [STRING] [array_declarator]
+maybe_typed_name_arg: simple_type [NAME | named_nested_type_quals func_decl] ['=' (test | '*')] # HACK: This is meant to be (type [IDENTIFIER] | IDENTIFIER), kinda similar to the "test ['=' test]" hack
+cfunc_args: maybe_typed_name_arg (',' maybe_typed_name_arg)* [','] ['.' '.' '.']
+exception_value_clause: 'except' ('*' | '+' [NAME | '*'] | ['?'] test)
+func_decl: ('(' [type_qualifiers named_nested_type_quals | cfunc_args] ')')+ ['nogil'] [exception_value_clause] ['with' 'gil'] ['const']
+
+typed_decl: ['inline'] simple_type (['=' test] typed_decl_rest |  # Type is implicit
+                                    func_decl (':' suite | typed_decl_rest) |  # C++ constructors or function pointers
+                                    (NAME [STRING] | cpp_operator) [array_declarator] (func_decl (':' suite | typed_decl_rest) |
+                                                                                       ['=' test] typed_decl_rest))
+typed_decl_rest: (',' [type_qualifiers] named_nested_type_quals [func_decl] ['=' test])* [','] NEWLINE
+cpp_operator: 'operator' ['+'['+'] | '-'['-'] | '*' | '/' | '%' |
+                          '~' | '|'['|'] | '&'['&'] | '^' | '<<' | '>>' |
+                          '==' | '!=' | '<=' | '<' | '>=' | '>' |
+                          '=' | '!' | ',' |
+                          '[' ']' | '(' ')' | 'bool']
+
+type_qualifiers: type_qualifier+
+type_qualifier: ('*' | '**' | '&') ['const'] | type_index ('.' NAME [type_index])*
+# TODO: old buffer syntax
+array_declarator: '[' testlist ']'
+type_index: '[' [(NUMBER | type (',' type)* | (memory_view_index (',' memory_view_index)*))] ']'
+memory_view_index: ':' [':'] [NUMBER]
 
 # Backward compatibility cruft to support:
 # [ x for x in lambda: True, lambda: False if x() ]
