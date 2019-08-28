@@ -126,7 +126,7 @@ nested_type_quals: '(' (type_qualifiers [nested_type_quals] | nested_type_quals)
 type: simple_type [nested_type_quals func_decl]
 
 named_nested_type_quals: '(' (type_qualifiers named_nested_type_quals | named_nested_type_quals) ')' | NAME [STRING] [array_declarator]
-maybe_typed_name_arg: simple_type [NAME | named_nested_type_quals func_decl] ['=' (test | '*')] # HACK: This is meant to be (type [IDENTIFIER] | IDENTIFIER), kinda similar to the "test ['=' test]" hack
+maybe_typed_name_arg: simple_type ([NAME [':' test] | named_nested_type_quals func_decl] | [':' test]) ['=' (test | '*')] # HACK: This is meant to be (type [IDENTIFIER] | IDENTIFIER), kinda similar to the "test ['=' test]" hack
 cfunc_args: maybe_typed_name_arg (',' maybe_typed_name_arg)* [','] ['.' '.' '.']
 exception_value_clause: 'except' ('*' | '+' [NAME | '*'] | ['?'] test)
 func_decl: ('(' [type_qualifiers named_nested_type_quals | cfunc_args] ')')+ ['nogil'] [exception_value_clause] ['with' 'gil'] ['const']
