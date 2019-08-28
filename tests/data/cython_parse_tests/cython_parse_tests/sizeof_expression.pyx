@@ -1,0 +1,6 @@
+sizeof(4 + 5)
+sizeof(vector[int]())
+sizeof(&x)
+sizeof(x + y)
+sizeof(y * z)
+sizeof(64 / 3)
