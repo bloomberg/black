@@ -11,6 +11,7 @@ cdef:
     ((int, float) (*(*))(long, double)) something2
     (int ((&((**))))(int)) func2
     int (*func3)(double x, int y)
+    int func4(double x, y: Rectangle, PyObject* z: Any)
     (int (*)(), int (*)()) func_pair
     ((int (*)(), int (*)()) (*)()) func_returning_fuc_pair
     int func_with_body():
@@ -48,6 +49,7 @@ cdef ((int, float) (**)(long, double)) something1
 cdef ((int, float) (*(*))(long, double)) something2
 cdef (int ((&((**))))(int)) func2
 cdef int (*func3)(double x, int y)
+cdef int func4(double x, y: Rectangle, PyObject* z: Any)
 cdef (int (*)(), int (*)()) func_pair
 cdef ((int (*)(), int (*)()) (*)()) func_returning_func_pair
 cdef int func_with_body():
