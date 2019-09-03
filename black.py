@@ -58,7 +58,12 @@ DEFAULT_EXCLUDES = (
 )
 DEFAULT_INCLUDES = r"\.pyi?$"
 CACHE_DIR = Path(user_cache_dir("black", version=__version__))
+import shutil
 
+try:
+    shutil.rmtree(CACHE_DIR)
+except:
+    pass
 
 # types
 FileContent = str
@@ -104,6 +109,10 @@ def monkey_patch_cython_symbols() -> None:
         syms.classdef,
         syms.DEF_stmt,
         syms.IF_stmt,
+        syms.typed_decl,
+        syms.cdef_block,
+        syms.cdef_extern_block,
+        syms.cclassdef,
     }
     VARARGS_PARENTS = {
         syms.arglist,
@@ -135,6 +144,8 @@ def monkey_patch_cython_symbols() -> None:
         syms.trailer,
         syms.term,
         syms.power,
+        syms.typecast,
+        syms.sizeof_expr,
     }
 
 
@@ -945,6 +956,10 @@ def lib2to3_parse(src_txt: str, target_versions: Iterable[TargetVersion] = ()) -
         drv = driver.Driver(grammar, pytree.convert)
         try:
             result = drv.parse_string(src_txt, True)
+            from pgen_utils import repr_tree, get_children, node_repr
+
+            #print(repr_tree(result, get_children, node_repr))
+            # exit(0)
             break
 
         except ParseError as pe:
@@ -1307,6 +1322,11 @@ class Line:
 
         if token.COLON == leaf.type and self.is_class_paren_empty:
             del self.leaves[-2:]
+        if leaf.type in {token.RPAR, token.RSQB} and self.is_cclass_brackets_empty(
+            leaf
+        ):
+            del self.leaves[-1:]
+            return
         if self.leaves and not preformatted:
             # Note: at this point leaf.prefix should be empty except for
             # imports, for which we only preserve newlines.
@@ -1409,6 +1429,64 @@ class Line:
             bool(self)
             and self.leaves[0].type == token.STRING
             and self.leaves[0].value.startswith(('"""', "'''"))
+        )
+
+    def is_cclass_brackets_empty(self, leaf: Leaf) -> bool:
+        return (
+            leaf.parent
+            and leaf.parent.type == syms.cclassdef
+            and (
+                (token.RSQB == leaf.type and token.LSQB == leaf.prev_sibling.type)
+                or (token.RPAR == leaf.type and token.LPAR == leaf.prev_sibling.type)
+            )
+        )
+
+    @property
+    def is_cdef_def(self) -> bool:
+        """Is this a cdef (enum/class/struct/union/cppclass) definition"""
+        if not bool(self):
+            return False
+
+        cdef_defs = {
+            syms.enumdef,
+            syms.cclassdef,
+        }  # TODO: Add syms.struct_uniondef, syms.cppclassdef, syms.fuseddef
+        idx = 0
+        cdef_keywords = {"cdef", "cpdef"}
+        if self.leaves[0].value in cdef_keywords:
+            idx += 1
+            cdef_modifiers = {"public", "extern", "readonly", "api"}
+            while idx < len(self.leaves) and self.leaves[idx].value in cdef_modifiers:
+                idx += 1
+        return (
+            idx < len(self.leaves)
+            and self.leaves[idx].type == token.NAME
+            and self.leaves[idx].value
+            in {"enum", "class", "struct", "union", "packed", "cppclass", "fused"}
+            and self.leaves[idx].parent.type in cdef_defs
+        )
+
+    @property
+    def is_ctypedef_def(self) -> bool:
+        """Is this a cdef (enum/class/struct/union,fused) definition"""
+        if not bool(self):
+            return False
+        ctypedef_defs = {
+            syms.enumdef,
+            syms.cclassdef,
+        }  # TODO: Add syms.struct_uniondef, syms.fuseddef
+
+        idx = 0
+        if self.leaves[0].value == "ctypedef":
+            idx += 1
+            cdef_modifiers = {"public", "extern", "readonly", "api"}
+            while idx < len(self.leaves) and self.leaves[idx].value in cdef_modifiers:
+                idx += 1
+        return (
+            self.leaves[idx].type == token.NAME
+            and self.leaves[idx].value
+            in {"enum", "class", "struct", "union", "packed", "fused"}
+            and self.leaves[idx].parent.type in ctypedef_defs
         )
 
     def contains_standalone_comments(self, depth_limit: int = sys.maxsize) -> bool:
@@ -1642,7 +1720,13 @@ class EmptyLineTracker:
                 before = 0 if depth else 1
             else:
                 before = 1 if depth else 2
-        if current_line.is_decorator or current_line.is_def or current_line.is_class:
+        if (
+            current_line.is_decorator
+            or current_line.is_def
+            or current_line.is_class
+            or current_line.is_cdef_def
+            or current_line.is_ctypedef_def
+        ):
             return self._maybe_empty_lines_for_class_or_def(current_line, before)
 
         if (
@@ -1886,6 +1970,8 @@ class LineGenerator(Visitor[Line]):
 
     def visit_SEMI(self, leaf: Leaf) -> Iterator[Line]:
         """Remove a semicolon and put the other statement on a separate line."""
+        if leaf.parent and leaf.parent.type == syms.typed_decl_rest:
+            yield from self.visit_default(leaf)
         yield from self.line()
 
     def visit_ENDMARKER(self, leaf: Leaf) -> Iterator[Line]:
@@ -1897,6 +1983,42 @@ class LineGenerator(Visitor[Line]):
         if not self.current_line.bracket_tracker.any_open_brackets():
             yield from self.line()
         yield from self.visit_default(leaf)
+
+    def visit_enum_line(self, node: Node) -> Iterator[Line]:
+        is_suite_like = node.parent.type == syms.enumdef
+        # Drop the trailing comma COMMA (",") if it exists
+        if node.children[-1].type == token.COMMA:
+            node.children.pop()
+
+        if is_suite_like:
+            yield from self.line(+1)
+
+        for child in node.children:
+            yield from self.line()
+            if child.type == token.COMMA:
+                yield from self.line()
+            else:
+                yield from self.visit(child)
+
+        if is_suite_like:
+            yield from self.line(-1)
+
+    def visit_inline_cdef(self, node: Node) -> Iterator[Line]:
+        if node.parent.type in {
+            syms.cdef_stmt,
+            syms.ctypedef_stmt,
+            syms.inline_cdef_stmt,
+        }:
+            yield from self.visit_default(node)
+        else:
+            is_suite_like = node.parent.type in STATEMENT
+            if is_suite_like:
+                yield from self.line(+1)
+                yield from self.visit_default(node)
+                yield from self.line(-1)
+            else:
+                yield from self.line()
+                yield from self.visit_default(node)
 
     def __attrs_post_init__(self) -> None:
         """You are in a twisty little maze of passages."""
@@ -1926,6 +2048,25 @@ class LineGenerator(Visitor[Line]):
             v, keywords={"IF", "ELSE", "ELIF"}, parens={"IF", "ELIF"}
         )
 
+        self.visit_cdef_stmt = partial(v, keywords={"cdef", "cpdef"}, parens=Ø)
+        self.visit_ctypedef_stmt = partial(v, keywords={"ctypedef"}, parens=Ø)
+        self.visit_enum_item = partial(v, keywords=Ø, parens=ASSIGNMENTS)
+
+        vcdef = self.visit_inline_cdef
+        self.visit_inline_cdef_stmt = vcdef
+        self.visit_enumdef = vcdef
+        self.visit_struct_uniondef = vcdef
+        self.visit_fuseddef = vcdef
+        self.visit_cdef_block = vcdef
+        self.visit_cdef_extern_block = vcdef
+        self.visit_cclassdef = vcdef
+        self.visit_cppclassdef = vcdef
+        self.visit_cppclass_attrib = self.visit_decorators
+        self.visit_typed_decl = vcdef
+
+        self.visit_pass_with_newline = vcdef
+        self.visit_fuseddef_item = vcdef
+
 
 IMPLICIT_TUPLE = {syms.testlist, syms.testlist_star_expr, syms.exprlist}
 BRACKET = {token.LPAR: token.RPAR, token.LSQB: token.RSQB, token.LBRACE: token.RBRACE}
@@ -1954,6 +2095,150 @@ def whitespace(leaf: Leaf, *, complex_subscript: bool) -> str:  # noqa: C901
         return DOUBLESPACE
 
     assert p is not None, f"INTERNAL ERROR: hand-made leaf without parent: {leaf!r}"
+
+    prev = leaf.prev_sibling
+    prev_leaf = preceding_leaf(leaf)
+
+    if p.type == syms.dotted_CY_NAME:
+        if prev:
+            return NO
+
+    if p.type == syms.sizeof_expr and not prev and prev_leaf.type != token.LPAR:
+        return SPACE
+    elif p.type == syms.sizeof_expr:
+        return NO
+
+    # Typecast
+    if t == token.QUESTIONMARK and p.type == syms.typecast:
+        return NO
+    if t == token.GREATER and p.type == syms.typecast:
+        return NO
+    if (
+        prev_leaf
+        and prev_leaf.type == token.GREATER
+        and prev_leaf.parent.type == syms.typecast
+    ):
+        return SPACE
+    elif (
+        prev_leaf
+        and prev_leaf.type == token.LESS
+        and prev_leaf.parent.type == syms.typecast
+    ):
+        return NO
+
+    if t == token.LPAR:
+        if p.type == syms.func_decl:
+            return NO
+
+    # Type related
+    if p.type in {
+        syms.type_qualifier,
+        syms.type_qualifiers,
+        syms.simple_type,
+        syms.array_declarator,
+        syms.type_index,
+        syms.memory_view_index,
+        syms.simple_type,
+        syms.nested_type_quals,
+        syms.named_nested_type_quals,
+        syms.func_decl,
+        syms.typed_decl_rest,
+    }:
+        if (
+            p.type == syms.func_decl
+            and prev
+            and prev.type in {token.STAR, token.DOUBLESTAR, token.AMPER}
+            and prev.prev_sibling
+            and prev.prev_sibling.type == token.LPAR
+        ):
+            return NO
+        if p.type in {syms.type_index, syms.memory_view_index}:
+            if prev_leaf.type == token.COMMA:
+                return SPACE
+        if t != token.NAME or prev_leaf.type == token.DOT:
+            return NO
+
+    if (
+        p.type in {syms.named_nested_type_quals}
+        and prev
+        and prev.type in {token.STAR, token.DOUBLESTAR, token.AMPER}
+    ):
+        return NO
+
+    if p.type == syms.exception_value_clause:
+        if prev and prev.type == token.PLUS:
+            return NO
+
+    if p.type == syms.cclassdef:
+        if t in {token.LPAR, token.LSQB}:
+            return NO
+
+    if p.type == syms.new_expr:
+        if t == token.LPAR:
+            return NO
+
+    if p.type == syms.cppclassdef_body:
+        if t in {token.LPAR, token.LSQB}:
+            return NO
+    if p.type == syms.cpp_operator:
+        cpp_operators = {
+            token.PLUS,
+            token.MINUS,
+            token.STAR,
+            token.SLASH,
+            token.PERCENT,
+            token.TILDE,
+            token.VBAR,
+            token.AMPER,
+            token.CIRCUMFLEX,
+            token.LEFTSHIFT,
+            token.RIGHTSHIFT,
+            token.EQEQUAL,
+            token.NOTEQUAL,
+            token.LESSEQUAL,
+            token.LESS,
+            token.GREATEREQUAL,
+            token.GREATER,
+            token.EQUAL,
+            token.EXCLAMATIONMARK,
+            token.COMMA,
+            token.LSQB,
+            token.RSQB,
+            token.LPAR,
+            token.RPAR,
+        }
+        if t in cpp_operators:
+            return NO
+
+    if t == token.EQUAL:
+        if p.type == syms.templatedef:
+            return NO
+        if prev.type == syms.tname and len(prev.children) <= 2:
+            # Nothing after the identifier
+            return NO
+        if prev.type == syms.vname and len(prev.children) > 2:
+            # There is a `not None` qualifier
+            return SPACE
+    if p and p.type == syms.maybe_typed_name_arg:
+        if leaf.type == token.EQUAL:
+            if (
+                prev_leaf
+                and prev_leaf.prev_sibling
+                and prev_leaf.prev_sibling.type == token.COLON
+            ):
+                return SPACE
+            else:
+                return NO
+    if prev_leaf and prev_leaf.type == token.EQUAL:
+        if prev_leaf.parent.type in {
+            syms.varargslist,
+            syms.maybe_typed_name_arg,
+            syms.templatedef,
+        }:
+            # A bit hacky: if the equal sign has whitespace, it means we
+            # previously found it's a typed argument.  So, we're using that, too.
+            return prev_leaf.prefix
+
     if t == token.COLON and p.type not in {
         syms.subscript,
         syms.subscriptlist,
@@ -2216,6 +2501,17 @@ def container_of(leaf: Leaf) -> LN:
     return container
 
 
+# TODO: Remove this
+# def is_descendant_of(leaf: Leaf, types: Set[int]) -> bool:
+#     p = leaf
+#     while p is not None:
+#         if p.type in types:
+#             return True
+#         p = p.parent
+#
+#     return False
+
+
 def is_split_after_delimiter(leaf: Leaf, previous: Optional[Leaf] = None) -> Priority:
     """Return the priority of the `leaf` delimiter, given a line break after it.
 
@@ -2241,6 +2537,29 @@ def is_split_before_delimiter(leaf: Leaf, previous: Optional[Leaf] = None) -> Pr
     if is_vararg(leaf, within=VARARGS_PARENTS | UNPACKING_PARENTS):
         # * and ** might also be MATH_OPERATORS but in this case they are not.
         # Don't treat them as a delimiter.
+        return 0
+
+    if (
+        leaf.parent
+        and leaf.parent.type
+        in {
+            syms.type_qualifier,
+            syms.type_qualifiers,
+            syms.simple_type,
+            syms.nested_type_quals,
+            syms.named_nested_type_quals,
+            syms.func_decl,
+            syms.type_qualifiers,
+        }
+        and leaf.type in {token.STAR, token.DOUBLESTAR, token.AMPER}
+    ):
+        return 0
+
+    if (
+        leaf.parent
+        and leaf.parent.type == syms.typecast
+        and leaf.type in {token.LESS, token.GREATER}
+    ):
         return 0
 
     if (
@@ -2941,12 +3260,52 @@ def normalize_string_quotes(leaf: Leaf) -> None:
     leaf.value = f"{prefix}{new_quote}{new_body}{new_quote}"
 
 
+def cython_normalize_numeric_literal(leaf: Leaf) -> None:
+    """Normalizes numeric (float, int, and complex) literals.
+
+    All letters used in the representation are normalized to lowercase (except
+    in Python 2 long literals).
+    """
+    text = leaf.value.upper()
+    if text.startswith(("0O", "0B")):
+        # Leave octal and binary literals alone.
+        before, after = text[:2], text[2:]
+        text = f"{before.lower()}{after}"
+    elif text.startswith("0X"):
+        # Change hex literals to upper case.
+        before, after = text[:2], text[2:]
+        text = f"{before.lower()}{after}"
+    elif "E" in text:
+        before, after = text.split("E")
+        sign = ""
+        if after.startswith("-"):
+            after = after[1:]
+            sign = "-"
+        elif after.startswith("+"):
+            after = after[1:]
+        before = format_float_or_int_string(before)
+        text = f"{before}e{sign}{after}"
+    # elif text.endswith(("J", "l")):
+    #    number = text[:-1]
+    #    suffix = text[-1]
+    #    # Capitalize in "2L" because "l" looks too similar to "1".
+    #    if suffix == "l":
+    #        suffix = "L"
+    #    text = f"{format_float_or_int_string(number)}{suffix}"
+    else:
+        text = format_float_or_int_string(text)
+    leaf.value = text
+
+
 def normalize_numeric_literal(leaf: Leaf) -> None:
     """Normalizes numeric (float, int, and complex) literals.
 
     All letters used in the representation are normalized to lowercase (except
     in Python 2 long literals).
     """
+    cython_normalize_numeric_literal(leaf)
+    return
+
     text = leaf.value.lower()
     if text.startswith(("0o", "0b")):
         # Leave octal and binary literals alone.
