@@ -16,17 +16,17 @@ decorator: '@' dotted_name [ '(' [arglist] ')' ] NEWLINE
 decorators: decorator+
 decorated: decorators (classdef | funcdef | async_funcdef | cdef_stmt)
 async_funcdef: ASYNC funcdef
-funcdef: 'def' PY_NAME parameters ['->' test] ':' suite
+funcdef: 'def' PY_NAME_XTRA parameters ['->' test] ':' suite
 parameters: '(' [typedargslist] ')'
 typedargslist: ((tfpdef ['=' test] ',')*
                 ('*' [tfpdef] (',' tfpdef ['=' test])* [',' ['**' tfpdef [',']]] | '**' tfpdef [','])
                 | tfpdef ['=' test] (',' tfpdef ['=' test])* [','])
-tname: simple_type [PY_NAME] [('not' | 'or') NAME] [':' test]  # [('not' | 'or') NAME] should be [('not' | 'or') 'None']
+tname: simple_type [PY_NAME_XTRA [array_declarator]] [('not' | 'or') NAME] [':' test]  # [('not' | 'or') NAME] should be [('not' | 'or') 'None'] but this way, we don't to do the keyword wordaround for None
 tfpdef: tname
 varargslist: ((vfpdef ['=' test] ',')*
               ('*' [vfpdef] (',' vfpdef ['=' test])*  [',' ['**' vfpdef [',']]] | '**' vfpdef [','])
               | vfpdef ['=' test] (',' vfpdef ['=' test])* [','])
-vname: simple_type [PY_NAME] ['not' NAME]  # ['not' NAME] should be ['not' 'None']
+vname: simple_type [PY_NAME] ['not' NAME]  # ['not' NAME] should be ['not' 'None'] but this way, we don't to do the keyword wordaround for None
 vfpdef: vname
 
 stmt: simple_stmt | compound_stmt
@@ -54,11 +54,11 @@ import_stmt: import_name | import_from
 import_name: ('cimport'|'import') dotted_as_names
 import_from: ('from' ('.'* dotted_name | '.'+)
               ('cimport'|'import') ('*' | '(' import_as_names ')' | import_as_names))
-import_as_name: PY_NAME ['as' PY_NAME]
+import_as_name: PY_NAME_XTRA ['as' PY_NAME]
 dotted_as_name: dotted_name ['as' PY_NAME]
 import_as_names: import_as_name (',' import_as_name)* [',']
 dotted_as_names: dotted_as_name (',' dotted_as_name)*
-dotted_name: PY_NAME ('.' PY_NAME)*
+dotted_name: PY_NAME ('.' PY_NAME_XTRA)*
 global_stmt: ('global' | 'nonlocal') PY_NAME (',' PY_NAME)*
 exec_stmt: 'exec' expr ['in' test [',' test]]
 assert_stmt: 'assert' test [',' test]
@@ -69,7 +69,9 @@ compound_stmt: if_stmt | while_stmt | for_stmt | try_stmt | with_stmt | funcdef 
 async_stmt: ASYNC (funcdef | with_stmt | for_stmt)
 if_stmt: 'if' test ':' suite ('elif' test ':' suite)* ['else' ':' suite]
 while_stmt: 'while' test ':' suite ['else' ':' suite]
-for_stmt: 'for' exprlist 'in' testlist ':' suite ['else' ':' suite]
+for_stmt: ('for' exprlist ('in' testlist | pyrex_for_body) ':' suite ['else' ':' suite])
+pyrex_for_body: 'from' expr ('<' | '<=' | '>=' | '>') NAME ('<' | '<=' | '>=' | '>') expr [NAME expr] # `[NAME expr]` should be `['by' expr]` but this way, we don't to do the keyword wordaround for by
+#for_stmt: 'for' exprlist 'in' testlist ':' suite ['else' ':' suite]
 try_stmt: ('try' ':' suite
            ((except_clause ':' suite)+
 	    ['else' ':' suite]
@@ -86,8 +88,8 @@ except_clause: 'except' [test [(',' | 'as') test]]
 suite: simple_stmt | NEWLINE INDENT stmt+ DEDENT
 
 pass_with_newline: 'pass' NEWLINE
-cdef_suite: cdef_suite_item | NEWLINE INDENT cdef_suite_item+ DEDENT
-cdef_suite_item: pass_with_newline | ctypedef_stmt | DEF_stmt | IF_stmt | [decorators] cdef_stmt | [decorators] inline_cdef_stmt
+cdef_suite: cdef_suite_item | NEWLINE INDENT [STRING NEWLINE] cdef_suite_item+ DEDENT
+cdef_suite_item: DEF_stmt | IF_stmt | pass_with_newline | ctypedef_stmt | [decorators] cdef_stmt | [decorators] inline_cdef_stmt
 inline_cdef_stmt: ['public' | 'extern' | 'readonly'] ['api'] (enumdef | struct_uniondef | fuseddef | cdef_block | cdef_extern_block | cclassdef | cppclassdef | typed_decl)
 enumdef: 'enum' [NAME [STRING]] ':' enum_suite
 enum_suite: enum_line | NEWLINE INDENT enum_line+ DEDENT
@@ -123,18 +125,21 @@ extra_types: 'bool'
 
 ctuple_type: '(' type (',' type)* [','] ')'
 simple_type: ['const'] (dotted_CY_NAME | basic_c_type | extra_types | ctuple_type) [type_qualifiers]
-nested_type_quals: '(' (type_qualifiers [nested_type_quals] | nested_type_quals) ')'
+nested_type_quals: '(' (type_qualifiers [PY_NAME_XTRA | nested_type_quals] | nested_type_quals) ')'
 type: simple_type [nested_type_quals func_decl]
 
-named_nested_type_quals: '(' (type_qualifiers named_nested_type_quals | named_nested_type_quals) ')' | CY_NAME [STRING] [array_declarator]
-maybe_typed_name_arg: simple_type ([CY_NAME [':' test] | named_nested_type_quals func_decl] | [':' test]) ['=' (test | '*')] # HACK: This is meant to be (type [IDENTIFIER] | IDENTIFIER), kinda similar to the "test ['=' test]" hack
-cfunc_args: maybe_typed_name_arg (',' maybe_typed_name_arg)* [','] ['.' '.' '.']
+named_nested_type_quals: '(' ([type_qualifiers] named_nested_type_quals) ')' | CY_NAME_XTRA [STRING] [array_declarator]
+maybe_typed_name_arg: simple_type ([CY_NAME_XTRA [array_declarator] [':' test] | nested_type_quals func_decl] | [':' test]) ['=' (test | '*' | '?')] # HACK: This is meant to be (type [IDENTIFIER] | IDENTIFIER), kinda similar to the "test ['=' test]" hack
+cfunc_args: maybe_typed_name_arg (',' maybe_typed_name_arg)* [','] [ellipsis]
+ellipsis: '.' '.' '.'
 exception_value_clause: 'except' ('*' | '+' [NAME | '*'] | ['?'] test)
-func_decl: ('(' [type_qualifiers named_nested_type_quals | cfunc_args] ')')+ ['nogil'] [exception_value_clause] ['with' 'gil'] ['const']
+
+func_ptr_name: type_qualifiers named_nested_type_quals
+func_decl: '(' [func_ptr_name [')' '(' [cfunc_args]] | cfunc_args] ')' ['nogil'] [exception_value_clause] ['with' 'gil'] ['const']
 
 typed_decl: ['inline'] simple_type (['=' test] typed_decl_rest |  # Type is implicit
-                                    func_decl (':' suite | typed_decl_rest) |  # C++ constructors or function pointers
-                                    (CY_NAME [STRING] | cpp_operator) [array_declarator] (func_decl (':' suite | typed_decl_rest) |
+                                    [STRING] func_decl (':' suite | ['=' test] typed_decl_rest) |  # C++ constructors or function pointers or parenthesized pointers
+                                    (CY_NAME_XTRA [STRING] | cpp_operator) [array_declarator] (func_decl (':' suite | typed_decl_rest) |
                                                                                           ['=' test] typed_decl_rest))
 typed_decl_rest: (',' [type_qualifiers] named_nested_type_quals [func_decl] ['=' test])* [','] [';'] NEWLINE
 cpp_operator: 'operator' ['+'['+'] | '-'['-'] | '*' | '/' | '%' |
@@ -144,11 +149,10 @@ cpp_operator: 'operator' ['+'['+'] | '-'['-'] | '*' | '/' | '%' |
                           '[' ']' | '(' ')' | 'bool']
 
 type_qualifiers: type_qualifier+
-type_qualifier: ('*' | '**' | '&') ['const'] | type_index ('.' CY_NAME [type_index])*
-# TODO: old buffer syntax
-array_declarator: '[' testlist ']'
-type_index: '[' [(NUMBER | type (',' type)* | (memory_view_index (',' memory_view_index)*))] [','] ']'
+type_qualifier: ('*' | '**' | '&') ['const'] | type_index ('.' CY_NAME_XTRA [type_index])*
+type_index: '[' [(NUMBER | type ['=' test] (',' type ['=' test])* | (memory_view_index (',' memory_view_index)*))] [','] ']'
 memory_view_index: ':' [':'] [NUMBER]
+array_declarator: ('[' [testlist] ']')+
 
 # Backward compatibility cruft to support:
 # [ x for x in lambda: True, lambda: False if x() ]
@@ -176,7 +180,9 @@ factor: ('+'|'-'|'~'|'&'|typecast) factor | sizeof_expr | power
 typecast: '<' type ['?'] '>'
 sizeof_expr: 'sizeof' '(' type ')'
 power: [AWAIT] atom trailer* ['**' factor] | new_expr
-new_expr: 'new' simple_type '(' [arglist] ')'
+new_expr: 'new' [simple_type '(' [arglist] ')' |
+                 new_expr_trailer ['**' factor]] # trailer, sans the function call (because it collides with ctuples...)
+new_expr_trailer: ('[' subscriptlist ']' | '.' PY_NAME_XTRA) trailer*
 atom: ('(' [yield_expr|testlist_gexp] ')' |
        '[' [listmaker] ']' |
        '{' [dictsetmaker] '}' |
@@ -185,7 +191,7 @@ atom: ('(' [yield_expr|testlist_gexp] ')' |
 listmaker: (test|star_expr) ( old_comp_for | (',' (test|star_expr))* [','] )
 testlist_gexp: (test|star_expr) ( old_comp_for | (',' (test|star_expr))* [','] )
 lambdef: 'lambda' [varargslist] ':' test
-trailer: '(' [arglist] ')' | '[' subscriptlist ']' | '.' PY_NAME
+trailer: '(' [arglist] ')' | '[' subscriptlist ']' | '.' PY_NAME_XTRA
 subscriptlist: subscript (',' subscript)* [',']
 subscript: test | [test] ':' [test] [sliceop]
 sliceop: ':' [test]
@@ -213,7 +219,7 @@ argument: ( test [comp_for] |
             '*' test )
 
 comp_iter: comp_for | comp_if
-comp_for: [ASYNC] 'for' exprlist 'in' or_test [comp_iter]
+comp_for: [ASYNC] 'for' exprlist ('in' or_test | pyrex_for_body) [comp_iter]
 comp_if: 'if' old_test [comp_iter]
 
 # As noted above, testlist_safe extends the syntax allowed in list
@@ -232,7 +238,7 @@ comp_if: 'if' old_test [comp_iter]
 #
 # See https://bugs.python.org/issue27494
 old_comp_iter: old_comp_for | old_comp_if
-old_comp_for: [ASYNC] 'for' exprlist 'in' testlist_safe [old_comp_iter]
+old_comp_for: [ASYNC] 'for' exprlist ('in' testlist_safe | pyrex_for_body) [old_comp_iter]
 old_comp_if: 'if' old_test [old_comp_iter]
 
 testlist1: test (',' test)*
@@ -243,11 +249,14 @@ encoding_decl: NAME
 yield_expr: 'yield' [yield_arg]
 yield_arg: 'from' test | testlist
 
-cy_type_kwd: 'struct' | 'union' | 'fused' | 'cppclass' | 'enum'
+cy_type_kwd: 'packed' | 'struct' | 'union' | 'fused' | 'cppclass' | 'enum'
 cy_kwd: (cy_type_kwd | signedness | longness | basic_c_typenames | 'const' | 'complex' |
          'public' | 'extern' | 'readonly' | 'api' |
          'object' |'type' | 'check_size' |
-         'operator' | 'bool' | 'nogil' | 'namespace')
+         'operator' | 'bool' | 'nogil' | 'gil' | 'namespace' | 'inline' | 'as' |
+         'namespace')
 PY_NAME: NAME | cy_kwd
-CY_NAME: NAME | 'type' | 'object'
-dotted_CY_NAME: CY_NAME ('.' PY_NAME)*
+PY_NAME_XTRA: PY_NAME | 'new' | 'sizeof'
+CY_NAME: NAME | 'object' | 'type' | 'check_size' | 'as' | 'namespace' | 'new'
+CY_NAME_XTRA: CY_NAME
+dotted_CY_NAME: CY_NAME ('.' PY_NAME_XTRA)*

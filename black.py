@@ -958,7 +958,7 @@ def lib2to3_parse(src_txt: str, target_versions: Iterable[TargetVersion] = ()) -
             result = drv.parse_string(src_txt, True)
             from pgen_utils import repr_tree, get_children, node_repr
 
-            #print(repr_tree(result, get_children, node_repr))
+            print(repr_tree(result, get_children, node_repr))
             # exit(0)
             break
 
@@ -1256,7 +1256,7 @@ class BracketTracker:
             self._for_loop_depths
             and self._for_loop_depths[-1] == self.depth
             and leaf.type == token.NAME
-            and leaf.value == "in"
+            and leaf.value in {"in", "from"}
         ):
             self.depth -= 1
             self._for_loop_depths.pop()
@@ -2003,7 +2003,11 @@ class LineGenerator(Visitor[Line]):
         if is_suite_like:
             yield from self.line(-1)
 
-    def visit_inline_cdef(self, node: Node) -> Iterator[Line]:
+    def visit_inline_cdef(self, node: Node, parens: Set[str] = None) -> Iterator[Line]:
+        if parens is None:
+            parens = set()
+        normalize_invisible_parens(node, parens_after=parens)
+
         if node.parent.type in {
             syms.cdef_stmt,
             syms.ctypedef_stmt,
@@ -2019,6 +2023,15 @@ class LineGenerator(Visitor[Line]):
             else:
                 yield from self.line()
                 yield from self.visit_default(node)
+
+    def visit_typed_decl_rest(self, node: Node) -> Iterator[Line]:
+        normalize_invisible_parens(node, parens_after={"="})
+        yield from self.visit_default(node)
+
+    def visit_cfunc_args(self, node: Node) -> Iterator[Line]:
+        if node.children[-1].type == token.COMMA:
+            node.children.pop()
+        yield from self.visit_default(node)
 
     def __attrs_post_init__(self) -> None:
         """You are in a twisty little maze of passages."""
@@ -2050,7 +2063,7 @@ class LineGenerator(Visitor[Line]):
 
         self.visit_cdef_stmt = partial(v, keywords={"cdef", "cpdef"}, parens=Ø)
         self.visit_ctypedef_stmt = partial(v, keywords={"ctypedef"}, parens=Ø)
-        self.visit_enum_item = partial(v, keywords=Ø, parens=ASSIGNMENTS)
+        self.visit_enum_item = partial(v, keywords=Ø, parens={"="})
 
         vcdef = self.visit_inline_cdef
         self.visit_inline_cdef_stmt = vcdef
@@ -2062,7 +2075,7 @@ class LineGenerator(Visitor[Line]):
         self.visit_cclassdef = vcdef
         self.visit_cppclassdef = vcdef
         self.visit_cppclass_attrib = self.visit_decorators
-        self.visit_typed_decl = vcdef
+        self.visit_typed_decl = partial(vcdef, parens={"="})
 
         self.visit_pass_with_newline = vcdef
         self.visit_fuseddef_item = vcdef
@@ -2096,8 +2109,19 @@ def whitespace(leaf: Leaf, *, complex_subscript: bool) -> str:  # noqa: C901
 
     assert p is not None, f"INTERNAL ERROR: hand-made leaf without parent: {leaf!r}"
 
+    # /!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!/
+    #  ~~~~~~~~~~CYTHON FLOW STARTS~~~~~~~~~~
+    # /!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!/
+
     prev = leaf.prev_sibling
     prev_leaf = preceding_leaf(leaf)
+
+    if p.type == syms.ellipsis:
+        if prev:
+            return NO
+
+    if p.type == syms.pyrex_for_body:
+        return SPACE
 
     if p.type == syms.dotted_CY_NAME:
         if prev:
@@ -2126,11 +2150,26 @@ def whitespace(leaf: Leaf, *, complex_subscript: bool) -> str:  # noqa: C901
     ):
         return NO
 
+    if p.type == syms.new_expr_trailer:
+        return NO
+
     if t == token.LPAR:
         if p.type == syms.func_decl:
-            return NO
+            if leaf.next_sibling and leaf.next_sibling.type == syms.func_ptr_name:
+                return SPACE
+            else:
+                return NO
+        if p.type in {syms.nested_type_quals, syms.named_nested_type_quals}:
+            return SPACE
+
+    if p.type == syms.func_ptr_name:
+        return NO
 
     # Type related
+    if p.type == syms.typed_decl_rest:
+        if t == token.SEMI:
+            return NO
+
     if p.type in {
         syms.type_qualifier,
         syms.type_qualifiers,
@@ -2142,7 +2181,6 @@ def whitespace(leaf: Leaf, *, complex_subscript: bool) -> str:  # noqa: C901
         syms.nested_type_quals,
         syms.named_nested_type_quals,
         syms.func_decl,
-        syms.typed_decl_rest,
     }:
         if (
             p.type == syms.func_decl
@@ -2159,7 +2197,7 @@ def whitespace(leaf: Leaf, *, complex_subscript: bool) -> str:  # noqa: C901
             return NO
 
     if (
-        p.type in {syms.named_nested_type_quals}
+        p.type in {syms.nested_type_quals, syms.named_nested_type_quals}
         and prev
         and prev.type in {token.STAR, token.DOUBLESTAR, token.AMPER}
     ):
@@ -2245,6 +2283,10 @@ def whitespace(leaf: Leaf, *, complex_subscript: bool) -> str:  # noqa: C901
         syms.sliceop,
     }:
         return NO
+
+    # /!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!/
+    #  ~~~~~NORMAL BLACK FLOW CONTINUES~~~~~~
+    # /!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!/
 
     prev = leaf.prev_sibling
     if not prev:
