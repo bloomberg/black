@@ -204,8 +204,43 @@ class cython_symbols(Symbols):
     yield_arg: int
     yield_expr: int
     yield_stmt: int
-    DEF_stmt: int
+    # Cython specific
+    array_declarator: int
+    cclassdef: int
+    cdef_stmt: int
+    cpp_operator: int
+    cppclass_attrib: int
+    cppclassdef: int
+    cppclassdef_body: int
+    ctypedef_stmt: int
+    dotted_CY_NAME: int
+    ellipsis: int
+    enumdef: int
+    exception_value_clause: int
+    func_decl: int
+    func_ptr_name: int
+    fuseddef: int
+    inline_cdef_stmt: int
+    maybe_typed_name_arg: int
+    memory_view_index: int
+    named_nested_type_quals: int
+    nested_type_quals: int
+    new_expr: int
+    new_expr_trailer: int
+    pyrex_for_body: int
+    simple_type: int
+    sizeof_expr: int
+    struct_uniondef: int
+    templatedef: int
+    type_index: int
+    type_qualifier: int
+    type_qualifiers: int
+    typecast: int
+    typed_decl_rest: int
     IF_stmt: int
+    typed_decl: int
+    cdef_block: int
+    cdef_extern_block: int
 
 class pattern_symbols(Symbols):
     Alternative: int

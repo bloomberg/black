@@ -50,6 +50,12 @@ from blib2to3.pgen2 import driver, token
 from blib2to3.pgen2.grammar import Grammar
 from blib2to3.pgen2.parse import ParseError
 
+import shutil
+
+try:
+    shutil.rmtree(Path(user_cache_dir("black", version="19.3b0")))  # CACHE_DIR
+except Exception:
+    pass
 
 __version__ = "19.3b0"
 DEFAULT_LINE_LENGTH = 88
@@ -58,12 +64,7 @@ DEFAULT_EXCLUDES = (
 )
 DEFAULT_INCLUDES = r"\.pyi?$"
 CACHE_DIR = Path(user_cache_dir("black", version=__version__))
-import shutil
 
-try:
-    shutil.rmtree(CACHE_DIR)
-except:
-    pass
 
 # types
 FileContent = str
@@ -83,19 +84,24 @@ Cache = Dict[Path, CacheInfo]
 out = partial(click.secho, bold=True, err=True)
 err = partial(click.secho, fg="red", err=True)
 
+cython_mode = False
+
 pygram.initialize(CACHE_DIR)
 syms = (
     pygram.python_symbols
 )  # type: Union[Type[pygram.python_symbols], Type[pygram.cython_symbols]]
+cy_syms = pygram.cython_symbols
 
 
 def monkey_patch_cython_symbols() -> None:
+    global cython_mode
     global syms
     global IMPLICIT_TUPLE
     global STATEMENT
     global VARARGS_PARENTS
     global UNPACKING_PARENTS
     global TEST_DESCENDANTS
+    cython_mode = True
     syms = pygram.cython_symbols
     IMPLICIT_TUPLE = {syms.testlist, syms.testlist_star_expr, syms.exprlist}
     STATEMENT = {
@@ -107,9 +113,8 @@ def monkey_patch_cython_symbols() -> None:
         syms.with_stmt,
         syms.funcdef,
         syms.classdef,
-        syms.DEF_stmt,
         syms.IF_stmt,
-        syms.typed_decl,
+        syms.typed_decl,  # Function declaration
         syms.cdef_block,
         syms.cdef_extern_block,
         syms.cclassdef,
@@ -150,12 +155,14 @@ def monkey_patch_cython_symbols() -> None:
 
 
 def monkey_patch_python_symbols() -> None:
+    global cython_mode
     global syms
     global IMPLICIT_TUPLE
     global STATEMENT
     global VARARGS_PARENTS
     global UNPACKING_PARENTS
     global TEST_DESCENDANTS
+    cython_mode = False
     syms = pygram.python_symbols
     IMPLICIT_TUPLE = {syms.testlist, syms.testlist_star_expr, syms.exprlist}
     STATEMENT = {
@@ -575,7 +582,7 @@ def main(
     if any(source.suffix in {".pyx", ".pxd"} for source in sources) and any(
         source.suffix in {".py", ".pyi"} for source in sources
     ):
-        err("Provided with both Cython and Python files 😖")
+        err("Provided with both Cython and Python files 😵")
 
     if len(sources) == 1:
         reformat_one(
@@ -956,10 +963,6 @@ def lib2to3_parse(src_txt: str, target_versions: Iterable[TargetVersion] = ()) -
         drv = driver.Driver(grammar, pytree.convert)
         try:
             result = drv.parse_string(src_txt, True)
-            from pgen_utils import repr_tree, get_children, node_repr
-
-            print(repr_tree(result, get_children, node_repr))
-            # exit(0)
             break
 
         except ParseError as pe:
@@ -1256,7 +1259,13 @@ class BracketTracker:
             self._for_loop_depths
             and self._for_loop_depths[-1] == self.depth
             and leaf.type == token.NAME
-            and leaf.value in {"in", "from"}
+            and leaf.value == "in"
+        ) or (
+            cython_mode
+            and self._for_loop_depths
+            and self._for_loop_depths[-1] == self.depth
+            and leaf.type == token.NAME
+            and leaf.value == "from"
         ):
             self.depth -= 1
             self._for_loop_depths.pop()
@@ -1322,8 +1331,10 @@ class Line:
 
         if token.COLON == leaf.type and self.is_class_paren_empty:
             del self.leaves[-2:]
-        if leaf.type in {token.RPAR, token.RSQB} and self.is_cclass_brackets_empty(
-            leaf
+        if (
+            cython_mode
+            and leaf.type in {token.RPAR, token.RSQB}
+            and self.is_cclass_brackets_empty(leaf)
         ):
             del self.leaves[-1:]
             return
@@ -1432,9 +1443,10 @@ class Line:
         )
 
     def is_cclass_brackets_empty(self, leaf: Leaf) -> bool:
-        return (
+        return bool(
             leaf.parent
-            and leaf.parent.type == syms.cclassdef
+            and leaf.parent.type == cy_syms.cclassdef
+            and leaf.prev_sibling
             and (
                 (token.RSQB == leaf.type and token.LSQB == leaf.prev_sibling.type)
                 or (token.RPAR == leaf.type and token.LPAR == leaf.prev_sibling.type)
@@ -1448,9 +1460,12 @@ class Line:
             return False
 
         cdef_defs = {
-            syms.enumdef,
-            syms.cclassdef,
-        }  # TODO: Add syms.struct_uniondef, syms.cppclassdef, syms.fuseddef
+            cy_syms.enumdef,
+            cy_syms.cclassdef,
+            cy_syms.struct_uniondef,
+            cy_syms.cppclassdef,
+            cy_syms.fuseddef,
+        }
         idx = 0
         cdef_keywords = {"cdef", "cpdef"}
         if self.leaves[0].value in cdef_keywords:
@@ -1458,12 +1473,14 @@ class Line:
             cdef_modifiers = {"public", "extern", "readonly", "api"}
             while idx < len(self.leaves) and self.leaves[idx].value in cdef_modifiers:
                 idx += 1
-        return (
+        parent = self.leaves[idx].parent
+        return bool(
             idx < len(self.leaves)
             and self.leaves[idx].type == token.NAME
             and self.leaves[idx].value
             in {"enum", "class", "struct", "union", "packed", "cppclass", "fused"}
-            and self.leaves[idx].parent.type in cdef_defs
+            and parent
+            and parent.type in cdef_defs
         )
 
     @property
@@ -1472,9 +1489,11 @@ class Line:
         if not bool(self):
             return False
         ctypedef_defs = {
-            syms.enumdef,
-            syms.cclassdef,
-        }  # TODO: Add syms.struct_uniondef, syms.fuseddef
+            cy_syms.enumdef,
+            cy_syms.cclassdef,
+            cy_syms.struct_uniondef,
+            cy_syms.fuseddef,
+        }
 
         idx = 0
         if self.leaves[0].value == "ctypedef":
@@ -1482,11 +1501,13 @@ class Line:
             cdef_modifiers = {"public", "extern", "readonly", "api"}
             while idx < len(self.leaves) and self.leaves[idx].value in cdef_modifiers:
                 idx += 1
-        return (
+        parent = self.leaves[idx].parent
+        return bool(
             self.leaves[idx].type == token.NAME
             and self.leaves[idx].value
             in {"enum", "class", "struct", "union", "packed", "fused"}
-            and self.leaves[idx].parent.type in ctypedef_defs
+            and parent
+            and parent.type in ctypedef_defs
         )
 
     def contains_standalone_comments(self, depth_limit: int = sys.maxsize) -> bool:
@@ -1724,8 +1745,10 @@ class EmptyLineTracker:
             current_line.is_decorator
             or current_line.is_def
             or current_line.is_class
-            or current_line.is_cdef_def
-            or current_line.is_ctypedef_def
+            or (
+                cython_mode
+                and (current_line.is_cdef_def or current_line.is_ctypedef_def)
+            )
         ):
             return self._maybe_empty_lines_for_class_or_def(current_line, before)
 
@@ -1970,7 +1993,7 @@ class LineGenerator(Visitor[Line]):
 
     def visit_SEMI(self, leaf: Leaf) -> Iterator[Line]:
         """Remove a semicolon and put the other statement on a separate line."""
-        if leaf.parent and leaf.parent.type == syms.typed_decl_rest:
+        if cython_mode and leaf.parent and leaf.parent.type == cy_syms.typed_decl_rest:
             yield from self.visit_default(leaf)
         yield from self.line()
 
@@ -1985,8 +2008,8 @@ class LineGenerator(Visitor[Line]):
         yield from self.visit_default(leaf)
 
     def visit_enum_line(self, node: Node) -> Iterator[Line]:
-        is_suite_like = node.parent.type == syms.enumdef
-        # Drop the trailing comma COMMA (",") if it exists
+        is_suite_like = node.parent and node.parent.type == cy_syms.enumdef
+        # Drop the trailing comma (",") if it exists
         if node.children[-1].type == token.COMMA:
             node.children.pop()
 
@@ -2008,14 +2031,15 @@ class LineGenerator(Visitor[Line]):
             parens = set()
         normalize_invisible_parens(node, parens_after=parens)
 
-        if node.parent.type in {
-            syms.cdef_stmt,
-            syms.ctypedef_stmt,
-            syms.inline_cdef_stmt,
+        if node.parent and node.parent.type in {
+            cy_syms.cdef_stmt,
+            cy_syms.ctypedef_stmt,
+            cy_syms.inline_cdef_stmt,
+            cy_syms.cppclass_attrib,
         }:
             yield from self.visit_default(node)
         else:
-            is_suite_like = node.parent.type in STATEMENT
+            is_suite_like = node.parent and node.parent.type in STATEMENT
             if is_suite_like:
                 yield from self.line(+1)
                 yield from self.visit_default(node)
@@ -2029,6 +2053,7 @@ class LineGenerator(Visitor[Line]):
         yield from self.visit_default(node)
 
     def visit_cfunc_args(self, node: Node) -> Iterator[Line]:
+        # Drop the trailing comma (",") if it exists
         if node.children[-1].type == token.COMMA:
             node.children.pop()
         yield from self.visit_default(node)
@@ -2052,10 +2077,18 @@ class LineGenerator(Visitor[Line]):
         self.visit_classdef = partial(v, keywords={"class"}, parens=Ø)
         self.visit_expr_stmt = partial(v, keywords=Ø, parens=ASSIGNMENTS)
         self.visit_return_stmt = partial(v, keywords={"return"}, parens={"return"})
-        self.visit_import_from = partial(v, keywords=Ø, parens={"import", "cimport"})
+        self.visit_import_from = partial(v, keywords=Ø, parens={"import"})
         self.visit_del_stmt = partial(v, keywords=Ø, parens={"del"})
         self.visit_async_funcdef = self.visit_async_stmt
         self.visit_decorated = self.visit_decorators
+
+        if cython_mode:
+            # Override default setting
+            self.visit_import_from = partial(
+                v, keywords=Ø, parens={"import", "cimport"}
+            )
+
+        self.visit_include_stmt = partial(v, keywords={"include"}, parens=Ø)
         self.visit_DEF_stmt = partial(v, keywords={"DEF"}, parens={"="})
         self.visit_IF_stmt = partial(
             v, keywords={"IF", "ELSE", "ELIF"}, parens={"IF", "ELIF"}
@@ -2066,6 +2099,10 @@ class LineGenerator(Visitor[Line]):
         self.visit_enum_item = partial(v, keywords=Ø, parens={"="})
 
         vcdef = self.visit_inline_cdef
+
+        self.visit_pass_with_newline = vcdef
+        self.visit_fuseddef_item = vcdef
+
         self.visit_inline_cdef_stmt = vcdef
         self.visit_enumdef = vcdef
         self.visit_struct_uniondef = vcdef
@@ -2074,11 +2111,8 @@ class LineGenerator(Visitor[Line]):
         self.visit_cdef_extern_block = vcdef
         self.visit_cclassdef = vcdef
         self.visit_cppclassdef = vcdef
-        self.visit_cppclass_attrib = self.visit_decorators
+        self.visit_cppclass_attrib = self.visit_decorated
         self.visit_typed_decl = partial(vcdef, parens={"="})
-
-        self.visit_pass_with_newline = vcdef
-        self.visit_fuseddef_item = vcdef
 
 
 IMPLICIT_TUPLE = {syms.testlist, syms.testlist_star_expr, syms.exprlist}
@@ -2112,170 +2146,201 @@ def whitespace(leaf: Leaf, *, complex_subscript: bool) -> str:  # noqa: C901
     # /!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!/
     #  ~~~~~~~~~~CYTHON FLOW STARTS~~~~~~~~~~
     # /!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!/
+    if cython_mode:
+        inderection_tokens = {token.STAR, token.DOUBLESTAR, token.AMPER}
+        prev = leaf.prev_sibling
+        prev_leaf = preceding_leaf(leaf)
 
-    prev = leaf.prev_sibling
-    prev_leaf = preceding_leaf(leaf)
-
-    if p.type == syms.ellipsis:
-        if prev:
-            return NO
-
-    if p.type == syms.pyrex_for_body:
-        return SPACE
-
-    if p.type == syms.dotted_CY_NAME:
-        if prev:
-            return NO
-
-    if p.type == syms.sizeof_expr and not prev and prev_leaf.type != token.LPAR:
-        return SPACE
-    elif p.type == syms.sizeof_expr:
-        return NO
-
-    # Typecast
-    if t == token.QUESTIONMARK and p.type == syms.typecast:
-        return NO
-    if t == token.GREATER and p.type == syms.typecast:
-        return NO
-    if (
-        prev_leaf
-        and prev_leaf.type == token.GREATER
-        and prev_leaf.parent.type == syms.typecast
-    ):
-        return SPACE
-    elif (
-        prev_leaf
-        and prev_leaf.type == token.LESS
-        and prev_leaf.parent.type == syms.typecast
-    ):
-        return NO
-
-    if p.type == syms.new_expr_trailer:
-        return NO
-
-    if t == token.LPAR:
-        if p.type == syms.func_decl:
-            if leaf.next_sibling and leaf.next_sibling.type == syms.func_ptr_name:
-                return SPACE
-            else:
+        if p.type == cy_syms.ellipsis:
+            if prev:
                 return NO
-        if p.type in {syms.nested_type_quals, syms.named_nested_type_quals}:
+
+        if p.type == cy_syms.pyrex_for_body:
             return SPACE
 
-    if p.type == syms.func_ptr_name:
-        return NO
+        if p.type == cy_syms.dotted_CY_NAME:
+            if prev:
+                return NO
 
-    # Type related
-    if p.type == syms.typed_decl_rest:
-        if t == token.SEMI:
+        # sizeof expressions
+        if p.type == cy_syms.sizeof_expr:
+            if p.parent and p.parent.type == syms.atom:
+                return NO
+            else:
+                return SPACE
+
+        # Typecast
+        if p.type == cy_syms.typecast:
+            if t in {token.QUESTIONMARK, token.GREATER}:
+                return NO
+        if prev_leaf and prev_leaf.parent and prev_leaf.parent.type == cy_syms.typecast:
+            if prev_leaf.type == token.GREATER:
+                return SPACE
+            elif prev_leaf.type == token.LESS:
+                return NO
+
+        if p.type == cy_syms.new_expr_trailer:
             return NO
 
-    if p.type in {
-        syms.type_qualifier,
-        syms.type_qualifiers,
-        syms.simple_type,
-        syms.array_declarator,
-        syms.type_index,
-        syms.memory_view_index,
-        syms.simple_type,
-        syms.nested_type_quals,
-        syms.named_nested_type_quals,
-        syms.func_decl,
-    }:
+        if t == token.LPAR:
+            if p.type == cy_syms.func_decl:
+                if (
+                    leaf.next_sibling
+                    and leaf.next_sibling.type == cy_syms.func_ptr_name
+                ):
+                    return SPACE
+                else:
+                    return NO
+            if p.type in {cy_syms.nested_type_quals, cy_syms.named_nested_type_quals}:
+                return SPACE
+
+        if p.type == cy_syms.func_ptr_name:
+            return NO
+
+        # Type related
+        if p.type == cy_syms.typed_decl_rest:
+            if t == token.SEMI:
+                return NO
+
         if (
-            p.type == syms.func_decl
-            and prev
-            and prev.type in {token.STAR, token.DOUBLESTAR, token.AMPER}
-            and prev.prev_sibling
-            and prev.prev_sibling.type == token.LPAR
+            prev_leaf
+            and prev_leaf.type in OPENING_BRACKETS
+            and prev_leaf.parent
+            and prev_leaf.parent.type in {cy_syms.func_decl}
         ):
             return NO
-        if p.type in {syms.type_index, syms.memory_view_index}:
-            if prev_leaf.type == token.COMMA:
-                return SPACE
-        if t != token.NAME or prev_leaf.type == token.DOT:
-            return NO
 
-    if (
-        p.type in {syms.nested_type_quals, syms.named_nested_type_quals}
-        and prev
-        and prev.type in {token.STAR, token.DOUBLESTAR, token.AMPER}
-    ):
-        return NO
-
-    if p.type == syms.exception_value_clause:
-        if prev and prev.type == token.PLUS:
-            return NO
-
-    if p.type == syms.cclassdef:
-        if t in {token.LPAR, token.LSQB}:
-            return NO
-
-    if p.type == syms.new_expr:
-        if t == token.LPAR:
-            return NO
-
-    if p.type == syms.cppclassdef_body:
-        if t in {token.LPAR, token.LSQB}:
-            return NO
-    if p.type == syms.cpp_operator:
-        cpp_operators = {
-            token.PLUS,
-            token.MINUS,
-            token.STAR,
-            token.SLASH,
-            token.PERCENT,
-            token.TILDE,
-            token.VBAR,
-            token.AMPER,
-            token.CIRCUMFLEX,
-            token.LEFTSHIFT,
-            token.RIGHTSHIFT,
-            token.EQEQUAL,
-            token.NOTEQUAL,
-            token.LESSEQUAL,
-            token.LESS,
-            token.GREATEREQUAL,
-            token.GREATER,
-            token.EQUAL,
-            token.EXCLAMATIONMARK,
-            token.COMMA,
-            token.LSQB,
-            token.RSQB,
-            token.LPAR,
-            token.RPAR,
-        }
-        if t in cpp_operators:
-            return NO
-
-    if t == token.EQUAL:
-        if p.type == syms.templatedef:
-            return NO
-        if prev.type == syms.tname and len(prev.children) <= 2:
-            # Nothing after the identifier
-            return NO
-        if prev.type == syms.vname and len(prev.children) > 2:
-            # There is a `not None` qualifier
-            return SPACE
-    if p and p.type == syms.maybe_typed_name_arg:
-        if leaf.type == token.EQUAL:
-            if (
-                prev_leaf
-                and prev_leaf.prev_sibling
-                and prev_leaf.prev_sibling.type == token.COLON
-            ):
-                return SPACE
-            else:
-                return NO
-    if prev_leaf and prev_leaf.type == token.EQUAL:
-        if prev_leaf.parent.type in {
-            syms.varargslist,
-            syms.maybe_typed_name_arg,
-            syms.templatedef,
+        if p.type in {
+            cy_syms.type_qualifier,
+            cy_syms.type_qualifiers,
+            cy_syms.simple_type,
         }:
-            # A bit hacky: if the equal sign has whitespace, it means we
-            # previously found it's a typed argument.  So, we're using that, too.
-            return prev_leaf.prefix
+            if prev_leaf and prev_leaf.type in inderection_tokens:
+                return NO
+            else:
+                return SPACE
+        if (
+            prev_leaf
+            and prev_leaf.type in inderection_tokens
+            and prev_leaf.parent
+            and prev_leaf.parent.type
+            in {cy_syms.type_qualifier, cy_syms.type_qualifiers, cy_syms.simple_type}
+        ):
+            return NO
+
+        if p.type in {
+            cy_syms.type_qualifier,
+            cy_syms.type_qualifiers,
+            cy_syms.simple_type,
+            cy_syms.array_declarator,
+            cy_syms.type_index,
+            cy_syms.memory_view_index,
+            cy_syms.simple_type,
+            cy_syms.nested_type_quals,
+            cy_syms.named_nested_type_quals,
+            cy_syms.func_decl,
+        }:
+            if (
+                p.type == cy_syms.func_decl
+                and prev
+                and prev.type in {token.STAR, token.DOUBLESTAR, token.AMPER}
+                and prev.prev_sibling
+                and prev.prev_sibling.type == token.LPAR
+            ):
+                return NO
+            if p.type in {cy_syms.type_index, cy_syms.memory_view_index}:
+                if prev_leaf and prev_leaf.type == token.COMMA:
+                    return SPACE
+            if t != token.NAME or (prev_leaf and prev_leaf.type == token.DOT):
+                return NO
+
+        if (
+            p.type in {cy_syms.nested_type_quals, cy_syms.named_nested_type_quals}
+            and prev
+            and prev.type in {token.STAR, token.DOUBLESTAR, token.AMPER}
+        ):
+            return NO
+
+        if p.type == cy_syms.exception_value_clause:
+            if prev and prev.type == token.PLUS:
+                return NO
+
+        if p.type == cy_syms.new_expr:
+            if t == token.LPAR:
+                return NO
+        if p.type == cy_syms.cclassdef:
+            if t in {token.LPAR, token.LSQB}:
+                return NO
+        if p.type == cy_syms.cppclassdef_body:
+            if t in {token.LPAR, token.LSQB}:
+                return NO
+
+        if p.type == cy_syms.cpp_operator:
+            # cpp_operators = {
+            #     token.PLUS,
+            #     token.MINUS,
+            #     token.STAR,
+            #     token.SLASH,
+            #     token.PERCENT,
+            #     token.TILDE,
+            #     token.VBAR,
+            #     token.AMPER,
+            #     token.CIRCUMFLEX,
+            #     token.LEFTSHIFT,
+            #     token.RIGHTSHIFT,
+            #     token.EQEQUAL,
+            #     token.NOTEQUAL,
+            #     token.LESSEQUAL,
+            #     token.LESS,
+            #     token.GREATEREQUAL,
+            #     token.GREATER,
+            #     token.EQUAL,
+            #     token.EXCLAMATIONMARK,
+            #     token.COMMA,
+            #     token.LSQB,
+            #     token.RSQB,
+            #     token.LPAR,
+            #     token.RPAR,
+            # }
+            if t != token.NAME:
+                return NO
+
+        if t == token.EQUAL:
+            if p.type == cy_syms.templatedef:
+                return NO
+            if prev and prev.type == syms.tname and len(prev.children) <= 2:
+                # Nothing after the identifier
+                return NO
+            if prev and prev.type == syms.vname and len(prev.children) > 2:
+                # There is a `not None` qualifier
+                return SPACE
+            if p and p.type == cy_syms.maybe_typed_name_arg:
+                if (
+                    prev_leaf
+                    and prev_leaf.prev_sibling
+                    and prev_leaf.prev_sibling.type == token.COLON
+                ):
+                    return SPACE
+                else:
+                    return NO
+
+        if prev_leaf and prev_leaf.type == token.EQUAL:
+            if prev_leaf.parent and prev_leaf.parent.type in {
+                cy_syms.maybe_typed_name_arg,
+                cy_syms.templatedef,
+            }:
+                # A bit hacky: if the equal sign has whitespace, it means we
+                # previously found it's a typed argument.  So, we're using that, too.
+                return prev_leaf.prefix
+
+        elif p.type == syms.import_from:
+            if t == token.NAME:
+                if v == "cimport":
+                    return SPACE
+
+    # /!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!/
+    #  ~~~~~NORMAL BLACK FLOW CONTINUES~~~~~~
+    # /!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!/
 
     if t == token.COLON and p.type not in {
         syms.subscript,
@@ -2283,10 +2348,6 @@ def whitespace(leaf: Leaf, *, complex_subscript: bool) -> str:  # noqa: C901
         syms.sliceop,
     }:
         return NO
-
-    # /!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!/
-    #  ~~~~~NORMAL BLACK FLOW CONTINUES~~~~~~
-    # /!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!/
 
     prev = leaf.prev_sibling
     if not prev:
@@ -2480,7 +2541,7 @@ def whitespace(leaf: Leaf, *, complex_subscript: bool) -> str:  # noqa: C901
                 return NO
 
         elif t == token.NAME:
-            if v in {"import", "cimport"}:
+            if v == "import":
                 return SPACE
 
             if prev and prev.type == token.DOT:
@@ -2543,15 +2604,18 @@ def container_of(leaf: Leaf) -> LN:
     return container
 
 
-# TODO: Remove this
-# def is_descendant_of(leaf: Leaf, types: Set[int]) -> bool:
-#     p = leaf
-#     while p is not None:
-#         if p.type in types:
-#             return True
-#         p = p.parent
-#
-#     return False
+# TODO: Remove this (?)
+def is_descendant_of(leaf: Leaf, types: Set[int]) -> bool:
+    if leaf.type in types:
+        return True
+
+    p = leaf.parent
+    while p is not None:
+        if p.type in types:
+            return True
+        p = p.parent
+
+    return False
 
 
 def is_split_after_delimiter(leaf: Leaf, previous: Optional[Leaf] = None) -> Priority:
@@ -2581,28 +2645,29 @@ def is_split_before_delimiter(leaf: Leaf, previous: Optional[Leaf] = None) -> Pr
         # Don't treat them as a delimiter.
         return 0
 
-    if (
-        leaf.parent
-        and leaf.parent.type
-        in {
-            syms.type_qualifier,
-            syms.type_qualifiers,
-            syms.simple_type,
-            syms.nested_type_quals,
-            syms.named_nested_type_quals,
-            syms.func_decl,
-            syms.type_qualifiers,
-        }
-        and leaf.type in {token.STAR, token.DOUBLESTAR, token.AMPER}
-    ):
-        return 0
+    if cython_mode:
+        if (
+            leaf.parent
+            and leaf.parent.type
+            in {
+                cy_syms.type_qualifier,
+                cy_syms.type_qualifiers,
+                cy_syms.simple_type,
+                cy_syms.nested_type_quals,
+                cy_syms.named_nested_type_quals,
+                cy_syms.func_decl,
+                cy_syms.type_qualifiers,
+            }
+            and leaf.type in {token.STAR, token.DOUBLESTAR, token.AMPER}
+        ):
+            return 0
 
-    if (
-        leaf.parent
-        and leaf.parent.type == syms.typecast
-        and leaf.type in {token.LESS, token.GREATER}
-    ):
-        return 0
+        if (
+            leaf.parent
+            and leaf.parent.type == cy_syms.typecast
+            and leaf.type in {token.LESS, token.GREATER}
+        ):
+            return 0
 
     if (
         leaf.type == token.DOT
@@ -3179,7 +3244,11 @@ def is_import(leaf: Leaf) -> bool:
     return bool(
         t == token.NAME
         and (
-            (v in {"import", "cimport"} and p and p.type == syms.import_name)
+            (
+                (v == "import" or (cython_mode and v == "cimport"))
+                and p
+                and p.type == syms.import_name
+            )
             or (v == "from" and p and p.type == syms.import_from)
         )
     )
@@ -3345,8 +3414,9 @@ def normalize_numeric_literal(leaf: Leaf) -> None:
     All letters used in the representation are normalized to lowercase (except
     in Python 2 long literals).
     """
-    cython_normalize_numeric_literal(leaf)
-    return
+    if cython_mode:
+        cython_normalize_numeric_literal(leaf)
+        return
 
     text = leaf.value.lower()
     if text.startswith(("0o", "0b")):

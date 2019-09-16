@@ -19,18 +19,18 @@ async_funcdef: ASYNC funcdef
 funcdef: 'def' PY_NAME_XTRA parameters ['->' test] ':' suite
 parameters: '(' [typedargslist] ')'
 typedargslist: ((tfpdef ['=' test] ',')*
-                ('*' [tfpdef] (',' tfpdef ['=' test])* [',' ['**' tfpdef [',']]] | '**' tfpdef [','])
+                ('*' [tname] (',' tname ['=' test])* [',' ['**' tname [',']]] | '**' tname [','])
                 | tfpdef ['=' test] (',' tfpdef ['=' test])* [','])
 tname: simple_type [PY_NAME_XTRA [array_declarator]] [('not' | 'or') NAME] [':' test]  # [('not' | 'or') NAME] should be [('not' | 'or') 'None'] but this way, we don't to do the keyword wordaround for None
 tfpdef: tname
 varargslist: ((vfpdef ['=' test] ',')*
-              ('*' [vfpdef] (',' vfpdef ['=' test])*  [',' ['**' vfpdef [',']]] | '**' vfpdef [','])
+              ('*' [vname] (',' vname ['=' test])*  [',' ['**' vname [',']]] | '**' vname [','])
               | vfpdef ['=' test] (',' vfpdef ['=' test])* [','])
 vname: simple_type [PY_NAME] ['not' NAME]  # ['not' NAME] should be ['not' 'None'] but this way, we don't to do the keyword wordaround for None
 vfpdef: vname
 
 stmt: simple_stmt | compound_stmt
-simple_stmt: (include_stmt | small_stmt (';' small_stmt)* [';']) NEWLINE
+simple_stmt: small_stmt (';' small_stmt)* [';'] NEWLINE
 small_stmt: (expr_stmt | print_stmt  | del_stmt | pass_stmt | flow_stmt |
              import_stmt | global_stmt | exec_stmt | assert_stmt)
 expr_stmt: testlist_star_expr (annassign | augassign (yield_expr|testlist) |
@@ -62,35 +62,41 @@ dotted_name: PY_NAME ('.' PY_NAME_XTRA)*
 global_stmt: ('global' | 'nonlocal') PY_NAME (',' PY_NAME)*
 exec_stmt: 'exec' expr ['in' test [',' test]]
 assert_stmt: 'assert' test [',' test]
-DEF_stmt: 'DEF' NAME '=' testlist NEWLINE
-include_stmt: 'include' STRING
 
-compound_stmt: if_stmt | while_stmt | for_stmt | try_stmt | with_stmt | funcdef | classdef | decorated | async_stmt | ctypedef_stmt | cdef_stmt | IF_stmt | DEF_stmt
+compound_stmt: (if_stmt | while_stmt | for_stmt | try_stmt | with_stmt | funcdef | classdef | decorated | async_stmt |
+                ctypedef_stmt | cdef_stmt | include_stmt | DEF_stmt | IF_stmt)
 async_stmt: ASYNC (funcdef | with_stmt | for_stmt)
 if_stmt: 'if' test ':' suite ('elif' test ':' suite)* ['else' ':' suite]
 while_stmt: 'while' test ':' suite ['else' ':' suite]
+
 for_stmt: ('for' exprlist ('in' testlist | pyrex_for_body) ':' suite ['else' ':' suite])
-pyrex_for_body: 'from' expr ('<' | '<=' | '>=' | '>') NAME ('<' | '<=' | '>=' | '>') expr [NAME expr] # `[NAME expr]` should be `['by' expr]` but this way, we don't to do the keyword wordaround for by
-#for_stmt: 'for' exprlist 'in' testlist ':' suite ['else' ':' suite]
+# the final `[NAME expr]` should be `['by' expr]` but this way, we don't need to do the keyword workaround for 'by'
+pyrex_for_body: ['from' expr] ('<' | '<=' | '>=' | '>') PY_NAME_XTRA ('<' | '<=' | '>=' | '>') expr [NAME expr]
+
 try_stmt: ('try' ':' suite
            ((except_clause ':' suite)+
 	    ['else' ':' suite]
 	    ['finally' ':' suite] |
 	   'finally' ':' suite))
 with_stmt: 'with' with_item (',' with_item)*  ':' suite
-IF_stmt: 'IF' testlist ':' suite ('ELIF' testlist ':' suite)* ['ELSE' ':' suite]
-cdef_stmt: ('cdef'|'cpdef') inline_cdef_stmt
-ctypedef_stmt: 'ctypedef' ['public' | 'extern' | 'readonly'] ['api'] (cclassdef | enumdef | struct_uniondef | fuseddef | typed_decl)
 with_item: test ['as' expr]
 with_var: 'as' expr
 # NB compile.c makes sure that the default except clause is last
 except_clause: 'except' [test [(',' | 'as') test]]
 suite: simple_stmt | NEWLINE INDENT stmt+ DEDENT
 
+include_stmt: 'include' STRING NEWLINE
+DEF_stmt: 'DEF' NAME '=' testlist NEWLINE
+IF_stmt: 'IF' testlist ':' suite ('ELIF' testlist ':' suite)* ['ELSE' ':' suite]
+
+cdef_stmt: ('cdef'|'cpdef') inline_cdef_stmt
+ctypedef_stmt: 'ctypedef' ['public' | 'extern' | 'readonly'] ['api'] (cclassdef | enumdef | struct_uniondef | fuseddef | typed_decl)
+
 pass_with_newline: 'pass' NEWLINE
 cdef_suite: cdef_suite_item | NEWLINE INDENT [STRING NEWLINE] cdef_suite_item+ DEDENT
 cdef_suite_item: DEF_stmt | IF_stmt | pass_with_newline | ctypedef_stmt | [decorators] cdef_stmt | [decorators] inline_cdef_stmt
-inline_cdef_stmt: ['public' | 'extern' | 'readonly'] ['api'] (enumdef | struct_uniondef | fuseddef | cdef_block | cdef_extern_block | cclassdef | cppclassdef | typed_decl)
+inline_cdef_stmt: (['public' | 'extern' | 'readonly'] ['api']
+                   (enumdef | struct_uniondef | fuseddef | cdef_block | cdef_extern_block | cclassdef | cppclassdef | typed_decl))
 enumdef: 'enum' [NAME [STRING]] ':' enum_suite
 enum_suite: enum_line | NEWLINE INDENT enum_line+ DEDENT
 enum_line: pass_with_newline | enum_item (',' enum_item)* [','] NEWLINE
@@ -105,18 +111,20 @@ c_class_option: ('object' | 'type' | 'check_size') NAME
 struct_uniondef: (['packed'] 'struct' | 'union') NAME [STRING] (NEWLINE | ':' struct_uniondef_suite)
 struct_uniondef_suite: NEWLINE INDENT (pass_with_newline | typed_decl)+ DEDENT
 fuseddef: 'fused' NAME ':' fuseddef_suite
-fuseddef_suite: NEWLINE INDENT fuseddef_item+ DEDENT
-fuseddef_item: (pass_stmt | type) NEWLINE
+fuseddef_suite: NEWLINE INDENT (pass_with_newline | fuseddef_item)+ DEDENT
+fuseddef_item: type NEWLINE
 
-templatedef: NAME ['=' '*']
 cppclassdef: 'cppclass' cppclassdef_body
 cppclassdef_body: (NAME [STRING] ['[' templatedef (',' templatedef)* ']']
                                 ['(' type (',' type)* ')']
                                 ['nogil']
                                 (NEWLINE | ':' cppclass_suite))
+templatedef: NAME ['=' '*']
 cppclass_suite: NEWLINE INDENT (pass_with_newline | cppclass_attrib)* DEDENT
-cppclass_attrib: [decorators] (cppclassdef | ('struct' | 'union') cppclassdef_body | ctypedef_stmt | enumdef | typed_decl)
+cppclass_struct_union_def: ('struct' | 'union') cppclassdef_body
+cppclass_attrib: [decorators] (cppclassdef | cppclass_struct_union_def | ctypedef_stmt | enumdef | typed_decl)
 
+# Type declarations
 signedness: 'unsigned' | 'signed'
 longness: 'short' | 'long'
 basic_c_typenames: 'void' | 'char' | 'int' | 'float' | 'double' | 'bint'
@@ -132,7 +140,7 @@ named_nested_type_quals: '(' ([type_qualifiers] named_nested_type_quals) ')' | C
 maybe_typed_name_arg: simple_type ([CY_NAME_XTRA [array_declarator] [':' test] | nested_type_quals func_decl] | [':' test]) ['=' (test | '*' | '?')] # HACK: This is meant to be (type [IDENTIFIER] | IDENTIFIER), kinda similar to the "test ['=' test]" hack
 cfunc_args: maybe_typed_name_arg (',' maybe_typed_name_arg)* [','] [ellipsis]
 ellipsis: '.' '.' '.'
-exception_value_clause: 'except' ('*' | '+' [NAME | '*'] | ['?'] test)
+exception_value_clause: 'except' ('*' | '+' [PY_NAME_XTRA | '*'] | ['?'] test)
 
 func_ptr_name: type_qualifiers named_nested_type_quals
 func_decl: '(' [func_ptr_name [')' '(' [cfunc_args]] | cfunc_args] ')' ['nogil'] [exception_value_clause] ['with' 'gil'] ['const']
@@ -149,7 +157,7 @@ cpp_operator: 'operator' ['+'['+'] | '-'['-'] | '*' | '/' | '%' |
                           '[' ']' | '(' ')' | 'bool']
 
 type_qualifiers: type_qualifier+
-type_qualifier: ('*' | '**' | '&') ['const'] | type_index ('.' CY_NAME_XTRA [type_index])*
+type_qualifier: 'const' | ('*' | '**' | '&') ['const'] | type_index ('.' CY_NAME_XTRA [type_index])*
 type_index: '[' [(NUMBER | type ['=' test] (',' type ['=' test])* | (memory_view_index (',' memory_view_index)*))] [','] ']'
 memory_view_index: ':' [':'] [NUMBER]
 array_declarator: ('[' [testlist] ']')+
